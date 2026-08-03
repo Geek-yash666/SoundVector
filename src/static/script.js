@@ -169,7 +169,7 @@ function openMobileInsights() {
     const artistNameEl = document.getElementById('playerArtistName');
     
     if (currentPlayingRow !== null && trackNameEl && trackNameEl.innerText && trackNameEl.innerText !== 'Audio Preview') {
-        openTrackIntel(currentPlayingRow, trackNameEl.innerText, artistNameEl ? artistNameEl.innerText : '');
+        selectTrackForInsights(currentPlayingRow, trackNameEl.innerText, artistNameEl ? artistNameEl.innerText : '', null);
         return;
     }
 
@@ -985,14 +985,20 @@ function openMobileTrackInsights(trackName, artistName, data, row) {
 
     let html = '';
 
-    // AI Insight headline
-    if (intel.headline || intel.reasoning) {
+    // AI Insight headline & deep analysis
+    if (intel.headline || intel.reasoning || (intel.insights && intel.insights.length)) {
         html += `
         <div style="padding:14px 0 10px;border-bottom:1px solid var(--border);">
             ${data.backend && data.backend.includes('gemini') ? `<span style="font-size:10px;font-weight:700;color:var(--accent-green);letter-spacing:0.5px;text-transform:uppercase;display:inline-flex;align-items:center;gap:4px;margin-bottom:6px;"><svg viewBox='0 0 24 24' width='10' height='10' fill='currentColor'><path d='M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z'/></svg>AI Insight</span><br>` : ''}
             <div style="font-size:15px;font-weight:700;color:#fff;line-height:1.4;">${intel.headline || ''}</div>
             ${intel.reasoning ? `<div style="font-size:13px;color:var(--text-secondary);margin-top:6px;line-height:1.5;">${intel.reasoning}</div>` : ''}
-            ${intel.listen_if ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px;font-style:italic;">${intel.listen_if}</div>` : ''}
+            ${intel.insights && intel.insights.length > 0 ? `
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+                    ${intel.insights.map(ins => `<div style="font-size:12.5px;color:#d0d0d0;display:flex;gap:6px;align-items:flex-start;line-height:1.4;"><span style="color:var(--accent-green);flex-shrink:0;margin-top:1px;">✦</span><span>${ins}</span></div>`).join('')}
+                </div>
+            ` : ''}
+            ${intel.sound_profile ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:6px;border-left:2px solid var(--accent-green);line-height:1.4;">${intel.sound_profile}</div>` : ''}
+            ${intel.listen_if ? `<div style="font-size:12px;color:var(--text-dim);margin-top:8px;font-style:italic;">${intel.listen_if}</div>` : ''}
         </div>`;
     }
 
