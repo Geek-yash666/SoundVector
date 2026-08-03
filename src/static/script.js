@@ -3,7 +3,7 @@
 // Changing this value forces all users to reload fresh assets
 // and clears any stale localStorage state from the old build.
 // =============================================================
-const BUILD_VERSION = '2.5';
+const BUILD_VERSION = '2.7';
 
 (function _clearStaleBuildCache() {
     const STORE_KEY = 'soundvector_build_version';
@@ -454,7 +454,7 @@ function renderSuggestions() {
         albumSuggestions.forEach(alb => {
             const artHtml = alb.cover_art ? `<img src="${alb.cover_art}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;">` : '💿';
             html += `
-            <div class="dropdown-album-card" onclick="openAlbumPage('${alb.title.replace(/'/g, "\\'")}', '${(alb.artist || '').replace(/'/g, "\\'")}', '${alb.id || ''}', '${alb.source || ''}')" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:8px;cursor:pointer;min-width:160px;max-width:220px;border:1px solid rgba(255,255,255,0.06);flex-shrink:0;">
+            <div class="dropdown-album-card" onclick="openAlbumPage('${escapeJs(alb.title)}', '${escapeJs(alb.artist || '')}', '${escapeJs(alb.id || '')}', '${escapeJs(alb.source || '')}')" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:8px;cursor:pointer;min-width:160px;max-width:220px;border:1px solid rgba(255,255,255,0.06);flex-shrink:0;">
                 <div style="width:38px;height:38px;border-radius:6px;overflow:hidden;flex-shrink:0;background:#222;display:flex;align-items:center;justify-content:center;font-size:16px;">${artHtml}</div>
                 <div style="overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;text-align:left;">
                     <span style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;">${alb.title}</span>
@@ -1274,8 +1274,9 @@ async function _flushEnrichQueue() {
     const localData = [];
     for (const item of batch) {
         const key = getTrackKey(item.name, item.artist);
-        if (enrichCache[key]) {
-            localData.push({ ...item, _cached: enrichCache[key] });
+        const cached = enrichCache[key];
+        if (cached && cached.deezer_album_art && cached.deezer_preview_url) {
+            localData.push({ ...item, _cached: cached });
         } else if (!_pendingEnrich.has(key)) {
             _pendingEnrich.add(key);
             toFetch.push(item);
@@ -1330,9 +1331,10 @@ function queueTrackEnrichment(trackName, artistName, row, trackObj) {
     if (!trackName || !artistName) return;
     if (trackObj) seedEnrichCache(trackObj);
     const key = getTrackKey(trackName, artistName);
-    if (enrichCache[key]) {
-        // Already cached — apply on next tick after DOM elements are inserted into document
-        setTimeout(() => _applyEnrichmentToDOM(key, enrichCache[key], trackName, artistName, row), 0);
+    const cached = enrichCache[key];
+    if (cached && cached.deezer_album_art && cached.deezer_preview_url) {
+        // Already fully cached — apply on next tick after DOM elements are inserted into document
+        setTimeout(() => _applyEnrichmentToDOM(key, cached, trackName, artistName, row), 0);
         return;
     }
     if (_pendingEnrich.has(key)) return; // already in-flight
@@ -1935,7 +1937,7 @@ function renderArtistAlbums(albums) {
         const trackKey = firstTrack ? getTrackKey(firstTrack.name, firstTrack.artist) : '';
 
         html += `
-        <div class="album-card" onclick="expandAlbum(${idx})" title="${cleanTitle}">
+        <div class="album-card" onclick="expandAlbum(${idx})" title="${escapeAttr(cleanTitle)}">
             <div class="album-card-art enrich-art" id="art-album-${idx}" data-track-key="${escapeAttr(trackKey)}" style="background:${grad}">
                 <div class="album-card-icon">💿</div>
             </div>

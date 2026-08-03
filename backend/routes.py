@@ -169,25 +169,27 @@ async def api_delete_user(username: str):
 @app.get("/api/search")
 async def api_search(q: str = ""):
     engine, mood_model, dj, checker, store = get_app_components()
-    results = engine.search(q, limit=8)
-    matching_artists = engine.match_artist(q, limit=4)
+    results = engine.search(q, limit=8) if engine else []
+    matching_artists = engine.match_artist(q, limit=4) if engine else []
     
     matching_albums = []
     q_clean = q.strip()
     
-    # Only query live external APIs if query is at least 3 chars AND local catalog hits are sparse
-    should_search_live = len(q_clean) >= 3 and (len(results) < 3 or (results and results[0].get("match", 0.0) < 85.0))
+    # Only query live external APIs if query is at least 2 chars AND local catalog hits are sparse/low-match
+    should_search_live = len(q_clean) >= 2 and (
+        len(results) < 3 or (results and results[0].get("match", 0.0) < 85.0)
+    )
     
     if should_search_live:
         loop = asyncio.get_event_loop()
         try:
-            # 500ms max timeout for external live APIs so search remains sub-second fast
+            # 2.0s max timeout for external live APIs so live search returns reliably
             live_hits, matching_albums = await asyncio.wait_for(
                 asyncio.gather(
-                    loop.run_in_executor(None, search_live_apis, q_clean, 3),
+                    loop.run_in_executor(None, search_live_apis, q_clean, 5),
                     loop.run_in_executor(None, search_live_albums, q_clean, 4)
                 ),
-                timeout=0.5
+                timeout=2.0
             )
             if live_hits:
                 existing_keys = {f"{(r.get('name') or '').lower().strip()}||{(r.get('artist') or '').lower().strip()}" for r in results}
@@ -198,14 +200,30 @@ async def api_search(q: str = ""):
                         combo = f"{hit.get('name', '')} {hit.get('artist', '')}".lower()
                         clean_q = _clean_search_query(q_clean).lower()
                         score = fuzz.token_set_ratio(clean_q, combo)
-                        if score >= 60:
+                        if score >= 40:
                             hit["match"] = float(score)
                             valid_live.append(hit)
                             existing_keys.add(hk)
                 
-                all_results = results + valid_live
-                all_results.sort(key=lambda x: x.get("match", 0.0), reverse=True)
-                results = all_results
+                # If local search had low match quality (< 70), prioritize live hits at top
+                if results and results[0].get("match", 0.0) < 70.0 and valid_live:
+                    results = valid_live + results
+                else:
+                    all_results = results + valid_live
+                    all_results.sort(key=lambda x: x.get("match", 0.0), reverse=True)
+                    results = all_results
+
+                # Populate matching_artists from live hits if no local artist matches the query well
+                live_artists = []
+                for lh in valid_live:
+                    l_art = lh.get("artist")
+                    if l_art and l_art.lower() not in [a.get("artist", "").lower() for a in live_artists]:
+                        live_artists.append({"artist": l_art, "max_pop": 0.95})
+                
+                best_local_sim = max([fuzz.token_set_ratio(q_clean.lower(), a.get("artist", "").lower()) for a in matching_artists], default=0)
+                if live_artists:
+                    if best_local_sim < 65:
+                        matching_artists = live_artists + matching_artists
         except Exception:
             matching_albums = []
 
@@ -213,8 +231,8 @@ async def api_search(q: str = ""):
 
     return {
         "results": final_results,
-        "artists": matching_artists,
-        "albums": matching_albums
+        "artists": matching_artists[:4],
+        "albums": matching_albums[:4]
     }
 
 
@@ -260,7 +278,7 @@ async def api_batch_enrich(body: BatchEnrichRequest):
 @app.get("/api/artist")
 async def api_artist(name: str = "", sort: str = "popularity"):
     engine, mood_model, dj, checker, store = get_app_components()
-    tracks = engine.artist_all_tracks(name, sort_by=sort, limit=100) if engine else []
+    tracks = engine.artist_all_tracks(name, sort_by=sort, limit=1000) if engine else []
     albums = engine.artist_albums(name) if engine else []
 
     # Use cached key instead of os.environ.get on every request
@@ -275,26 +293,43 @@ async def api_artist(name: str = "", sort: str = "popularity"):
             tracks.append(ltr)
             existing_names.add(tn)
 
-    # 2. Always fetch live top tracks from iTunes/Deezer to build complete discography
+
     if name:
         try:
-            live_tracks = search_live_apis(f"{name} top songs", limit=30)
-            if not live_tracks:
-                live_tracks = search_live_apis(name, limit=30)
+            live_tracks = search_live_apis(name, limit=100)
+            all_live = []
             for tr in live_tracks:
+                a_name = tr.get("artist", "").lower()
+                n_lower = name.lower()
+                if n_lower in a_name or a_name in n_lower:
+                    all_live.append(tr)
+            
+            existing_tracks_by_name = { (t.get("name") or "").lower().strip(): t for t in tracks }
+            for tr in all_live:
                 tname = tr.get("name", "")
-                tar = tr.get("artist", "")
                 if not tname:
                     continue
                 tn = tname.lower().strip()
-                if tn not in existing_names:
+                if tn in existing_tracks_by_name:
+                    # MERGE LIVE METADATA INTO THE INDEX TRACK!
+                    idx_t = existing_tracks_by_name[tn]
+                    if not idx_t.get("deezer_album_art") and tr.get("deezer_album_art"):
+                        idx_t["deezer_album_art"] = tr["deezer_album_art"]
+                    if not idx_t.get("deezer_preview_url") and tr.get("deezer_preview_url"):
+                        idx_t["deezer_preview_url"] = tr["deezer_preview_url"]
+                    if not idx_t.get("deezer_link") and tr.get("deezer_link"):
+                        idx_t["deezer_link"] = tr["deezer_link"]
+                    if tr.get("year") and (not idx_t.get("year") or str(idx_t.get("year")) in ["2024", "0", ""]):
+                        idx_t["year"] = tr["year"]
+                else:
                     existing_names.add(tn)
                     tracks.append(tr)
+                    existing_tracks_by_name[tn] = tr
         except Exception:
             pass
 
-    # 3. Always complement live albums from iTunes/Deezer if local albums list is small/empty
-    if len(albums) < 10 and name:
+    # 3. Always complement live albums from iTunes/Deezer
+    if name:
         try:
             live_albs = search_live_albums(name, limit=20)
             existing_albs = {(a.get("title") or "").lower().strip() for a in albums}
@@ -316,9 +351,9 @@ async def api_artist(name: str = "", sort: str = "popularity"):
     if sort == "popularity":
         tracks.sort(key=lambda t: t.get("popularity_pct", 50), reverse=True)
     elif sort == "newest":
-        tracks.sort(key=lambda t: int(t.get("year") or 0) if str(t.get("year", "")).isdigit() else 0, reverse=True)
+        tracks.sort(key=lambda t: int(str(t.get("year", "0"))[:4]) if str(t.get("year", "")).strip()[:4].isdigit() else 0, reverse=True)
     elif sort == "oldest":
-        tracks.sort(key=lambda t: int(t.get("year") or 0) if str(t.get("year", "")).isdigit() else 9999)
+        tracks.sort(key=lambda t: int(str(t.get("year", "9999"))[:4]) if str(t.get("year", "")).strip()[:4].isdigit() else 9999)
     elif sort == "title":
         tracks.sort(key=lambda t: (t.get("name") or "").lower())
 

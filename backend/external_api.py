@@ -357,12 +357,14 @@ def _search_itunes_tracks(q_str: str, limit: int) -> List[dict]:
                     continue
                 art = (item.get("artworkUrl100") or "").replace("100x100bb", "300x300bb")
                 yt_q = urllib.parse.quote(f"{aname} {tname}")
+                rel_date = item.get("releaseDate")
+                year_str = str(rel_date)[:4] if rel_date and str(rel_date)[:4].isdigit() else ""
                 hits.append({
                     "row": -1,
                     "track_id": f"live_itunes_{item.get('trackId')}",
                     "name": tname,
                     "artist": aname,
-                    "year": str(item.get("releaseDate", "2024"))[:4],
+                    "year": year_str,
                     "popularity_pct": 95,
                     "base_genres": [(item.get("primaryGenreName") or "pop").lower()],
                     "energy": 0.70, "valence": 0.65, "danceability": 0.70, "tempo_bpm": 120,
@@ -391,12 +393,14 @@ def _search_deezer_tracks(q_str: str, limit: int) -> List[dict]:
                     continue
                 art = (item.get("album") or {}).get("cover_medium", "")
                 yt_q = urllib.parse.quote(f"{aname} {tname}")
+                rel_date = item.get("release_date") or (item.get("album") or {}).get("release_date")
+                year_str = str(rel_date)[:4] if rel_date and str(rel_date)[:4].isdigit() else ""
                 hits.append({
                     "row": -1,
                     "track_id": f"live_deezer_{item.get('id')}",
                     "name": tname,
                     "artist": aname,
-                    "year": "2024",
+                    "year": year_str,
                     "popularity_pct": 90,
                     "base_genres": ["pop"],
                     "energy": 0.70, "valence": 0.65, "danceability": 0.70, "tempo_bpm": 120,
@@ -436,7 +440,7 @@ def _search_lastfm_tracks(q_str: str, limit: int, lfm_key: str) -> List[dict]:
                     "track_id": f"live_lastfm_{urllib.parse.quote(tname)}",
                     "name": tname,
                     "artist": aname,
-                    "year": "2024",
+                    "year": "",
                     "popularity_pct": 85,
                     "base_genres": ["pop"],
                     "energy": 0.70, "valence": 0.65, "danceability": 0.70, "tempo_bpm": 120,
@@ -472,19 +476,30 @@ def search_live_apis(query: str, limit: int = 5) -> List[dict]:
     if lfm_key:
         futures.append(_HTTP_POOL.submit(_search_lastfm_tracks, q_clean, limit, lfm_key))
 
-    all_hits: List[dict] = []
-    seen: set = set()
+    hits_by_key: Dict[str, dict] = {}
+    ordered_keys: List[str] = []
     for future in as_completed(futures, timeout=5):
         try:
             for hit in future.result():
                 key = f"{hit['name'].lower().strip()}||{hit['artist'].lower().strip()}"
-                if key not in seen:
-                    seen.add(key)
-                    all_hits.append(hit)
+                if key not in hits_by_key:
+                    hits_by_key[key] = hit
+                    ordered_keys.append(key)
+                else:
+                    # Merge metadata: prefer non-empty year, preview URL, cover art, links
+                    existing = hits_by_key[key]
+                    if not existing.get("year") and hit.get("year"):
+                        existing["year"] = hit["year"]
+                    if not existing.get("deezer_preview_url") and hit.get("deezer_preview_url"):
+                        existing["deezer_preview_url"] = hit["deezer_preview_url"]
+                    if not existing.get("deezer_album_art") and hit.get("deezer_album_art"):
+                        existing["deezer_album_art"] = hit["deezer_album_art"]
+                    if not existing.get("deezer_link") and hit.get("deezer_link"):
+                        existing["deezer_link"] = hit["deezer_link"]
         except Exception:
             pass
 
-    out_hits = all_hits[:limit]
+    out_hits = [hits_by_key[k] for k in ordered_keys][:limit]
     _LIVE_SEARCH_CACHE[cache_key] = out_hits
     return out_hits
 
@@ -589,18 +604,37 @@ def search_live_albums(query: str, limit: int = 4) -> List[dict]:
         return cached
 
     lfm_key = os.environ.get("LASTFM_API_KEY", "")
-    futures = [
-        _HTTP_POOL.submit(_search_deezer_albums, q_clean, limit),
-        _HTTP_POOL.submit(_search_itunes_albums, q_clean, limit),
-    ]
-    if lfm_key:
-        futures.append(_HTTP_POOL.submit(_search_lastfm_albums, q_clean, limit, lfm_key))
+    deezer_fut = _HTTP_POOL.submit(_search_deezer_albums, q_clean, limit)
+    itunes_fut = _HTTP_POOL.submit(_search_itunes_albums, q_clean, limit)
+    lfm_fut = _HTTP_POOL.submit(_search_lastfm_albums, q_clean, limit, lfm_key) if lfm_key else None
 
     albums: List[dict] = []
     seen: set = set()
-    for future in as_completed(futures, timeout=5):
+    
+    # Process iTunes first (better for regional)
+    try:
+        for alb in itunes_fut.result(timeout=5):
+            key = alb["title"].lower().strip()
+            if key not in seen:
+                seen.add(key)
+                albums.append(alb)
+    except Exception:
+        pass
+
+    # Process Deezer second
+    try:
+        for alb in deezer_fut.result(timeout=5):
+            key = alb["title"].lower().strip()
+            if key not in seen:
+                seen.add(key)
+                albums.append(alb)
+    except Exception:
+        pass
+
+    # Process LastFM third
+    if lfm_fut:
         try:
-            for alb in future.result():
+            for alb in lfm_fut.result(timeout=5):
                 key = alb["title"].lower().strip()
                 if key not in seen:
                     seen.add(key)
