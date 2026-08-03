@@ -1311,6 +1311,12 @@ body.right-collapsed-body .sidebar-reopen-tab {
     color: var(--accent-blue);
 }
 
+.btn-act.remove-btn:hover {
+    background: rgba(244, 63, 94, 0.25);
+    color: #f43f5e;
+    border-color: rgba(244, 63, 94, 0.4);
+}
+
 .anim-pulse {
     animation: feedbackPulse 0.4s ease;
 }

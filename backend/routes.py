@@ -175,10 +175,8 @@ async def api_search(q: str = ""):
     matching_albums = []
     q_clean = q.strip()
     
-    # Only query live external APIs if query is at least 2 chars AND local catalog hits are sparse/low-match
-    should_search_live = len(q_clean) >= 2 and (
-        len(results) < 3 or (results and results[0].get("match", 0.0) < 85.0)
-    )
+    # Always query live external APIs & albums if query is at least 2 chars
+    should_search_live = len(q_clean) >= 2
     
     if should_search_live:
         loop = asyncio.get_event_loop()

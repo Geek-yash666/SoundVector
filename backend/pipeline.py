@@ -71,9 +71,35 @@ def run_pipeline(query: str, engine: RecommendationEngine, mood_model: MoodToVec
             recs = engine.recommend([seed_row], k=k, mode=mode, profile_vectors=profile_vecs)
             header = f"{facts['name']} — {facts['artist']}"
         else:
-            t = mood_model.transform(f"{seed_track['name']} {seed_track['artist']} {' '.join(seed_track.get('base_genres', []))}")
-            recs = engine.recommend_by_vector(t["vector"], k=k)
-            header = f"{seed_track['name']} — {seed_track['artist']}"
+            artist_name = (seed_track.get("artist") or "").strip()
+            track_name = (seed_track.get("name") or "").strip()
+            q_text = f"{track_name} {artist_name} {' '.join(seed_track.get('base_genres', []))}".lower()
+
+            is_indian_regional = any(kw in q_text for kw in [
+                "raat", "stree", "aaj", "dil", "pyar", "ishq", "tera", "meri", "hindi", "telugu",
+                "tamil", "punjabi", "bollywood", "bhattacharya", "arijit", "pritam", "shreya",
+                "sachin", "jigar", "badshah", "diljit", "harris", "jayaraj", "devi sri", "thaman", "anirudh"
+            ])
+            tg = set()
+            if is_indian_regional:
+                tg = {"filmi", "modern bollywood", "desi pop", "indian pop", "punjabi pop"}
+
+            t = mood_model.transform(f"{track_name} {artist_name} {' '.join(seed_track.get('base_genres', []))}")
+            recs = engine.recommend_by_vector(t["vector"], k=k, target_base_genres=tg if tg else None, strict_genre=is_indian_regional)
+
+            if artist_name and artist_name.lower() not in ("unknown", "unknown artist"):
+                artist_live = search_live_apis(f"{artist_name} hits", limit=5)
+                if artist_live:
+                    existing_names = {(r.get("name") or "").lower().strip() for r in recs}
+                    blended = []
+                    for al in artist_live:
+                        an = (al.get("name") or "").lower().strip()
+                        if an != track_name.lower() and an not in existing_names:
+                            al["score"] = 0.92 - len(blended) * 0.03
+                            blended.append(al)
+                            existing_names.add(an)
+                    recs = (blended + recs)[:k]
+            header = f"{track_name} — {artist_name}"
 
         rec_cards = [engine.track_card(r["row"]) for r in recs if r.get("row", -1) >= 0]
         intel = dj.get_intel(facts, rec_cards)

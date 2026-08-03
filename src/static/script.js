@@ -61,6 +61,7 @@ const SVG_ICONS = {
     youtube: `<svg class="btn-svg-icon" viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>`,
     lastfm: `<svg class="btn-svg-icon" viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M10.9 16.9l-.8-2.2s-1.3 1.5-3.2 1.5c-1.7 0-2.9-1.5-2.9-3.8 0-3 1.5-4.1 3-4.1 2.1 0 2.8 1.4 3.4 3.2l.8 2.4c.8 2.4 2.2 4.3 6.4 4.3 3 0 5-1 5-3.5 0-2-1.1-3.1-3.2-3.6l-1.6-.4c-1.1-.3-1.4-.7-1.4-1.5 0-.9.7-1.4 1.8-1.4 1.2 0 1.9.5 2 1.7l2.6-.3c-.2-2.4-1.9-3.4-4.5-3.4-2.3 0-4.5 1-4.5 3.7 0 1.7.8 2.9 2.8 3.4l1.7.4c1.3.3 1.7.9 1.7 1.6 0 1-.9 1.5-2.3 1.5-2.2 0-3.2-1.2-3.7-2.8l-.8-2.4C11.1 8.5 9.6 6.5 6 6.5 2.2 6.5 0 9.1 0 12.4c0 3.2 1.7 5.7 5.7 5.7 2.3 0 3.9-.8 4.8-1.7.4.5.7.9 1.5 1.5l1.6-1.6c-.7-.4-1.2-.8-1.7-1.3"/></svg>`,
     playlist: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
+    trash: `<svg class="btn-svg-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
 };
 
 // Genre color mapping
@@ -89,7 +90,9 @@ function escapeJs(str) {
     return String(str)
         .replace(/\\/g, '\\\\')
         .replace(/'/g, "\\'")
-        .replace(/"/g, '&quot;');
+        .replace(/"/g, '&quot;')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
 }
 
 function getTrackKey(name, artist) {
@@ -440,7 +443,7 @@ function renderSuggestions() {
             const avatarId = `art-drop-${a.artist.replace(/[^a-zA-Z0-9]/g, '_')}`;
             setTimeout(() => loadArtistCircleAvatar(a.artist, avatarId), idx * 40);
             html += `
-            <div class="artist-circle-card" onclick="openArtistPage('${a.artist.replace(/'/g, "\\'")}')">
+            <div class="artist-circle-card" onclick="openArtistPage('${escapeJs(a.artist)}')">
                 <div class="artist-avatar" id="${avatarId}">${a.artist.substring(0, 1).toUpperCase()}</div>
                 <div class="artist-circle-name">${a.artist}</div>
             </div>`;
@@ -497,12 +500,13 @@ function selectDropdownItemByIdx(idx) {
     }
 }
 
-function selectDropdownItem(name, artist) {
+function selectDropdownItem(name, artist, itemObj = null) {
     const query = artist && artist !== 'Unknown Artist' ? `${name} ${artist}` : name;
     searchInput.value = query;
     hideSuggestions();
     switchTab('discover');
-    executeSearch(query, 'track');
+    const seedTrack = itemObj || { name, artist, row: -1 };
+    executeSearch(query, 'track', seedTrack);
 }
 
 searchInput.addEventListener('keydown', (e) => {
@@ -636,7 +640,7 @@ function renderHomePage(data) {
     if (data.quick_genres && data.quick_genres.length > 0) {
         html += `<div class="quick-chips">`;
         data.quick_genres.forEach(g => {
-            html += `<button class="quick-chip" onclick="quickGenreSearch('${g.replace(/'/g, "\\'")}')">${g}</button>`;
+            html += `<button class="quick-chip" onclick="quickGenreSearch('${escapeJs(g)}')">${g}</button>`;
         });
         // Add some extra mood chips
         const moodChips = ['chill', 'workout', 'focus', 'party', 'sad'];
@@ -758,7 +762,7 @@ function loadBrowseAllGrid() {
 
     BROWSE_CATEGORIES.forEach(cat => {
         html += `
-            <div class="browse-card" style="background-color: ${cat.color};" onclick="selectBrowseCategory('${cat.id}', '${cat.title.replace(/'/g, "\\'")}')">
+            <div class="browse-card" style="background-color: ${cat.color};" onclick="selectBrowseCategory('${cat.id}', '${escapeJs(cat.title)}')">
                 <span class="browse-card-title">${cat.title}</span>
                 <div class="browse-card-deco">${cat.icon}</div>
             </div>`;
@@ -2100,7 +2104,7 @@ function renderAlbumTrackList(tracks, albumTitle) {
                 <div class="action-buttons">
                     <button class="btn-act like ${activeSig === 'like' ? 'active-like' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'like', this)">${SVG_ICONS.like}</button>
                     <button class="btn-act dislike ${activeSig === 'dislike' ? 'active-dislike' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'dislike', this)">${SVG_ICONS.dislike}</button>
-                    <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${t.name.replace(/'/g, "\\'")}', '${t.artist.replace(/'/g, "\\'")}')">${SVG_ICONS.explore} Explore</button>
+                    <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${escapeJs(t.name)}', '${escapeJs(t.artist)}')">${SVG_ICONS.explore} Explore</button>
                 </div>
             </div>
         </div>`;
@@ -2242,6 +2246,84 @@ async function loadMySongs() {
     filterMySongs('all');
 }
 
+async function removeMySong(row, name, artist, cardElem) {
+    if (cardElem) {
+        cardElem.style.transition = 'all 0.3s ease';
+        cardElem.style.opacity = '0';
+        cardElem.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+            cardElem.remove();
+            const container = document.getElementById('mySongsList');
+            if (container && container.querySelectorAll('.my-song-card').length === 0) {
+                container.innerHTML = `<div class="loading-state" style="padding: 60px;">No tracks found in history for profile '${currentUser}'.</div>`;
+            }
+        }, 300);
+    }
+
+    const trackKey = (name && artist) ? getTrackKey(name, artist) : "";
+    const rKey = (row !== undefined && row !== null && row >= 0) ? row : (trackKey || `ext_${name}_${artist}`);
+
+    userTrackSignals[rKey] = 'none';
+    if (trackKey) userTrackSignals[trackKey] = 'none';
+
+    profileDataCache = profileDataCache.filter(item => {
+        const itemKey = getTrackKey(item.name, item.artist);
+        if (trackKey && itemKey === trackKey) return false;
+        if (row >= 0 && item.row === row) return false;
+        return true;
+    });
+
+    showToast(`Removed "${name || 'song'}" from My Songs`, 'info');
+
+    try {
+        await fetch(`${API_BASE}/api/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user: currentUser,
+                row: (row !== undefined && row !== null) ? row : -1,
+                signal: 'none',
+                mode: currentMode,
+                name: name || undefined,
+                artist: artist || undefined
+            })
+        });
+        refreshProfileStats();
+    } catch (err) { console.error(err); }
+}
+
+async function handleMySongSignal(row, signal, btnElem, name, artist) {
+    const card = btnElem.closest('.my-song-card');
+    const tk = getTrackKey(name, artist);
+    const rKey = (row !== undefined && row !== null && row >= 0) ? row : (tk || `ext_${name}_${artist}`);
+    const cardSig = card ? card.getAttribute('data-signal') : '';
+    const currentSignal = userTrackSignals[rKey] || userTrackSignals[tk] || cardSig || '';
+
+    if (currentSignal === signal) {
+        // Clicking active icon again removes the song from My Songs
+        await removeMySong(row, name, artist, card);
+    } else {
+        await sendFeedback(row, signal, btnElem, name, artist);
+        const item = profileDataCache.find(i => (row >= 0 && i.row === row) || (getTrackKey(i.name, i.artist) === tk));
+        if (item) item.signal = signal;
+
+        if (card) {
+            card.setAttribute('data-signal', signal);
+            const badgeBox = card.querySelector('.tags-list');
+            if (badgeBox) {
+                const signalLabel = signal === 'like' ? 'Liked' : 'Disliked';
+                const signalClass = signal === 'like' ? 'signal-like' : 'signal-dislike';
+                const signalIcon = signal === 'like' ? SVG_ICONS.like : SVG_ICONS.dislike;
+                badgeBox.innerHTML = `<span class="signal-badge ${signalClass}">${signalIcon} ${signalLabel}</span>`;
+            }
+            const likeBtn = card.querySelector('.btn-act.like');
+            const dislikeBtn = card.querySelector('.btn-act.dislike');
+            if (likeBtn) likeBtn.classList.toggle('active-like', signal === 'like');
+            if (dislikeBtn) dislikeBtn.classList.toggle('active-dislike', signal === 'dislike');
+        }
+    }
+}
+
 function filterMySongs(filterType, btnElem) {
     if (btnElem) {
         document.querySelectorAll('#viewMySongs .filter-btn').forEach(b => b.classList.remove('active'));
@@ -2268,8 +2350,12 @@ function filterMySongs(filterType, btnElem) {
 
         const artHtml = t.deezer_album_art ? `<img src="${t.deezer_album_art}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : '🎵';
 
+        const tk = getTrackKey(t.name, t.artist);
+        const rKey = (t.row !== undefined && t.row !== null && t.row >= 0) ? t.row : (tk || `ext_${t.name}_${t.artist}`);
+        const activeSig = userTrackSignals[rKey] || userTrackSignals[tk] || t.signal || '';
+
         html += `
-        <div class="track-card my-song-card" id="card-h-${t.row}" onclick="selectTrackForInsights(${t.row}, '${escapeJs(t.name)}', '${escapeJs(t.artist)}', this)">
+        <div class="track-card my-song-card" id="card-h-${t.row}" data-signal="${activeSig}" onclick="selectTrackForInsights(${t.row}, '${escapeJs(t.name)}', '${escapeJs(t.artist)}', this)">
             <div class="track-info-side">
                 <div class="cover-art-box enrich-art" id="art-h-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}">${artHtml}</div>
                 <div class="track-details">
@@ -2281,8 +2367,10 @@ function filterMySongs(filterType, btnElem) {
                     <div class="listen-on-row" id="enrich-h-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}"></div>
                 </div>
             </div>
-            <div class="track-action-side">
-                <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${t.name.replace(/'/g, "\\'")}', '${t.artist.replace(/'/g, "\\'")}')">${SVG_ICONS.explore} Explore</button>
+            <div class="track-action-side" style="display:flex;align-items:center;gap:6px;">
+                <button class="btn-act like ${activeSig === 'like' ? 'active-like' : ''}" title="${activeSig === 'like' ? 'Remove from My Songs' : 'Like'}" onclick="event.stopPropagation();handleMySongSignal(${t.row}, 'like', this, '${escapeJs(t.name)}', '${escapeJs(t.artist)}')">${SVG_ICONS.like}</button>
+                <button class="btn-act dislike ${activeSig === 'dislike' ? 'active-dislike' : ''}" title="${activeSig === 'dislike' ? 'Remove from My Songs' : 'Dislike'}" onclick="event.stopPropagation();handleMySongSignal(${t.row}, 'dislike', this, '${escapeJs(t.name)}', '${escapeJs(t.artist)}')">${SVG_ICONS.dislike}</button>
+                <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${escapeJs(t.name)}', '${escapeJs(t.artist)}', {name: '${escapeJs(t.name)}', artist: '${escapeJs(t.artist)}', row: ${t.row !== undefined && t.row !== null ? t.row : -1}, deezer_album_art: '${escapeJs(t.deezer_album_art || '')}'})">${SVG_ICONS.explore} Explore</button>
             </div>
         </div>`;
         queueTrackEnrichment(t.name, t.artist, t.row, t);
