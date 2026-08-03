@@ -1457,10 +1457,12 @@ def _raw_run_pipeline(query: str, engine: RecommendationEngine, mood_model: Mood
 
 
 if HAS_SPACES and GPU_USAGE:
-    # We don't use @spaces.GPU anymore because ZeroGPU fails to pickle 
-    # thread locks (like Gemini API's gRPC locks or FastAPI dependencies)
-    # and the pipeline doesn't actually use PyTorch/CUDA anyway.
-    _gpu_run_pipeline = _raw_run_pipeline
+    @spaces.GPU
+    def _gpu_run_pipeline(query: str, engine: RecommendationEngine, mood_model: MoodToVector,
+                         dj: RAGDJ, checker: GroundednessChecker, profile: dict, store: ProfileStore,
+                         mode: str = "similar", k: int = 10, search_type: str = "auto",
+                         seed_track: Optional[dict] = None):
+        return _raw_run_pipeline(query, engine, mood_model, dj, checker, profile, store, mode=mode, k=k, search_type=search_type, seed_track=seed_track)
 else:
     _gpu_run_pipeline = _raw_run_pipeline
 
