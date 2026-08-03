@@ -197,11 +197,15 @@ function openMobileInsights() {
     }
 
     modal.classList.remove('hidden');
+    modal.classList.add('open');
 }
 
 function closeMobileInsights() {
     const modal = document.getElementById('mobileInsightsModal');
-    if (modal) modal.classList.add('hidden');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('open');
+    }
 }
 
 function closeMobileInsightsOnBackdrop(e) {
@@ -915,7 +919,10 @@ async function selectTrackForInsights(row, trackName, artistName, cardElem) {
                 <div class="spinner"></div>
                 <div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">Loading insights...</div>
             </div>`;
-        if (modal) modal.classList.remove('hidden');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.classList.add('open');
+        }
     } else {
         const intelPanel = document.getElementById('intelPanel');
         if (intelPanel) {
@@ -1006,6 +1013,7 @@ function openMobileTrackInsights(trackName, artistName, data, row) {
 
     body.innerHTML = html;
     modal.classList.remove('hidden');
+    modal.classList.add('open');
 }
 
 // ---------------------------------------------------------

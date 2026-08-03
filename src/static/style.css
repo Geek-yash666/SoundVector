@@ -2506,6 +2506,10 @@ body.has-player-bar .dj-sidebar {
     transform: translateY(0);
 }
 
+.modal-overlay.open .mobile-insights-sheet {
+    display: flex !important;
+}
+
 .modal-header {
     display: flex;
     align-items: center;
