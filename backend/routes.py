@@ -681,20 +681,27 @@ async def api_playlist_gen(req: PlaylistGenRequest):
             return None
         
         if isinstance(q_obj, dict):
-            tname = q_obj.get("name", "")
-            aname = q_obj.get("artist", "")
+            tname = (q_obj.get("name") or "").strip()
+            aname = (q_obj.get("artist") or "").strip()
             q_str = f"{tname} {aname}".strip()
         elif isinstance(q_obj, str):
-            tname = q_obj
+            tname = q_obj.strip()
             aname = ""
-            q_str = q_obj
+            q_str = q_obj.strip()
         else:
             return None
+
+        if not tname:
+            return None
             
-        hits = engine.search(q_str, limit=1)
-        if hits and hits[0].get("match", 0) > 85.0:
-            return engine.track_card(hits[0]["row"])
+        # 1. Search local index first
+        hits = engine.search(q_str, limit=1) if engine else []
+        if hits and hits[0].get("match", 0) > 75.0:
+            tc = engine.track_card(hits[0]["row"])
+            if tc and tc.get("artist") and tc["artist"].lower() not in ["unknown", "unknown artist"]:
+                return tc
             
+        # 2. Search live APIs (iTunes/Deezer)
         live_hits = search_live_apis(q_str, limit=5)
         if live_hits:
             if not aname:
@@ -704,23 +711,22 @@ async def api_playlist_gen(req: PlaylistGenRequest):
                 hit_title = (lh.get("name") or "").lower()
                 art_score = fuzz.token_set_ratio(aname.lower(), hit_art)
                 title_score = fuzz.token_set_ratio(tname.lower(), hit_title)
-                if art_score > 35 and title_score > 30:
+                if art_score > 30 and title_score > 25:
                     return lh
+            return live_hits[0]
 
-        if tname and tname != q_str:
-            live_hits = search_live_apis(tname, limit=5)
-            if live_hits:
-                if not aname:
-                    return live_hits[0]
-                for lh in live_hits:
-                    hit_art = (lh.get("artist") or "").lower()
-                    hit_title = (lh.get("name") or "").lower()
-                    art_score = fuzz.token_set_ratio(aname.lower(), hit_art)
-                    title_score = fuzz.token_set_ratio(tname.lower(), hit_title)
-                    if art_score > 35 and title_score > 30:
-                        return lh
-
-        return None
+        # 3. Fallback: preserve LLM track object directly with correct artist name
+        yt_q = urllib.parse.quote(f"{aname} {tname}".strip() if aname else tname)
+        return {
+            "row": -1,
+            "name": tname,
+            "artist": aname or prompt_clean.title(),
+            "year": "2024",
+            "popularity_pct": 85,
+            "base_genres": ["pop"],
+            "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
+            "is_llm_generated": True
+        }
 
     specific_queries = gen_params.get("specific_tracks", []) if gen_params else []
     if specific_queries and isinstance(specific_queries, list):
@@ -763,11 +769,14 @@ async def api_playlist_gen(req: PlaylistGenRequest):
                 for g in mapped_genres:
                     tg.add(g)
         
-        vec_recs = engine.recommend_by_vector(t["vector"], k=count * 2, target_base_genres=tg if tg else None, max_per_artist=2, strict_genre=strict_reg)
+        vec_recs = engine.recommend_by_vector(t["vector"], k=count * 3, target_base_genres=tg if tg else None, max_per_artist=2, strict_genre=strict_reg)
         for r in vec_recs:
             if r.get("row", -1) >= 0:
                 tc = engine.track_card(r["row"])
-                k = f"{(tc.get('name') or '').lower().strip()}||{(tc.get('artist') or '').lower().strip()}"
+                artist_name = (tc.get("artist") or "").strip()
+                if not artist_name or artist_name.lower() in ["unknown", "unknown artist"]:
+                    continue
+                k = f"{(tc.get('name') or '').lower().strip()}||{artist_name.lower()}"
                 if k not in seen_keys:
                     seen_keys.add(k)
                     track_cards.append(tc)
