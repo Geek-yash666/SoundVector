@@ -701,35 +701,22 @@ function renderMainData(data) {
             </div>`;
     }
 
-    // Seed Track Card
+    // Target Seed Track Logic
     if (f.name && f.artist && f.artist !== "your vibe") {
-        const trackKey = (f.name && f.artist) ? getTrackKey(f.name, f.artist) : '';
-        const seedGenres = (f.base_genres || f.genres || []).slice(0, 3);
-        const seedArt = f.deezer_album_art ? `<img src="${f.deezer_album_art}" alt="album art" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : '🎵';
-
-        html += `
-        <div class="seed-banner-tag">TARGET SEED TRACK</div>
-        <div class="track-card seed-track-card">
-            <div class="track-info-side">
-                <div class="cover-art-box enrich-art" id="art-seed-${f.row || 'seed'}" data-track-key="${escapeAttr(trackKey)}">${seedArt}</div>
-                <div class="track-details">
-                    <div class="track-name" style="font-size:16px;">${f.name}</div>
-                    <div class="track-artist" onclick="openArtistPage('${escapeJs(f.artist)}')" style="color:var(--accent-green);cursor:pointer;">${f.artist} ${f.year ? `· ${f.year}` : ''}</div>
-                    <div class="tags-list">
-                        ${seedGenres.map(g => `<span class="genre-badge ${getGenreClass(g)}">${g}</span>`).join('')}
-                        <span class="signal-badge">${f.tempo_bpm || 120} BPM</span>
-                    </div>
-                    <div class="listen-on-row" id="enrich-seed-${f.row || 'seed'}" data-track-key="${escapeAttr(trackKey)}"></div>
-                </div>
-            </div>
-            <div class="track-action-side">
-                <button class="btn-act explore" onclick="selectDropdownItem('${escapeJs(f.name)}', '${escapeJs(f.artist)}')">Re-Explore</button>
-            </div>
-        </div>
-        <h2 style="font-size: 14px; font-weight: 700; margin: 18px 0 10px; color: var(--text-secondary); text-transform:uppercase; letter-spacing:1px;">Top 10 Similar Recommendations</h2>`;
+        html += `<h2 style="font-size: 18px; font-weight: 800; margin-bottom: 14px; color: #fff;">Recommendations based on "${f.name}"</h2>`;
         
-        if (f.name && f.artist) {
-            setTimeout(() => loadTrackEnrichment(f.name, f.artist, `enrich-seed-${f.row || 'seed'}`, f.row), 40);
+        // Ensure the seed track is included at the top of the recommendations list
+        // so that it gets all the like/dislike/skip action buttons
+        const seedInRecs = data.recs.some(r => r.row === f.row || (r.name === f.name && r.artist === f.artist));
+        if (!seedInRecs) {
+            data.recs.unshift({
+                row: f.row || -1,
+                name: f.name,
+                artist: f.artist,
+                year: f.year,
+                score: 1.0,
+                signals: { embed: 1.0, audio: 1.0, genre: 1.0 }
+            });
         }
     } else {
         html += `<h2 style="font-size: 18px; font-weight: 800; margin-bottom: 14px; color: #fff;">Recommendations for "${f.name || data.header}"</h2>`;

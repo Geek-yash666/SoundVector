@@ -1072,23 +1072,49 @@ SHORT_TERM_DECAY = 0.6
 class ProfileStore:
     def __init__(self, engine: RecommendationEngine, profiles_dir: str = "profiles"):
         self.engine = engine
+        self.bucket_url = os.environ.get("HF_PROFILES_BUCKET")
+        self.use_hf = False
+        self.fs = None
+        
+        if os.environ.get("HF_TOKEN") or HAS_SPACES:
+            try:
+                from huggingface_hub import HfFileSystem
+                self.fs = HfFileSystem()
+                self.fs.ls(self.bucket_url)
+                self.use_hf = True
+                print(f"✅ Connected to HF Storage Bucket: {self.bucket_url}")
+            except Exception as e:
+                print(f"⚠️ Could not access HF Bucket (maybe no token): {e}. Falling back to local storage.")
+                self.use_hf = False
+
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.dir = os.path.normpath(os.path.join(script_dir, "..", profiles_dir))
-        os.makedirs(self.dir, exist_ok=True)
+        self.local_dir = os.path.normpath(os.path.join(script_dir, "..", profiles_dir))
+        
+        if not self.use_hf:
+            os.makedirs(self.local_dir, exist_ok=True)
+            self.dir = self.local_dir
+        else:
+            self.dir = self.bucket_url
         self.dim = engine.embed_dim
 
     def _path(self, user: str) -> str:
         safe = "".join(c for c in user if c.isalnum() or c in "-_") or "default"
+        if self.use_hf:
+            return f"{self.dir}/{safe}.json"
         return os.path.join(self.dir, f"{safe}.json")
 
     def _events_path(self, user: str) -> str:
         safe = "".join(c for c in user if c.isalnum() or c in "-_") or "default"
+        if self.use_hf:
+            return f"{self.dir}/{safe}.events.jsonl"
         return os.path.join(self.dir, f"{safe}.events.jsonl")
 
     def load(self, user: str) -> dict:
         path = self._path(user)
-        if os.path.exists(path):
-            with open(path) as f:
+        exists = self.fs.exists(path) if self.use_hf else os.path.exists(path)
+        if exists:
+            open_func = self.fs.open if self.use_hf else open
+            with open_func(path, "r", encoding="utf-8") as f:
                 p = json.load(f)
             p["short_term"] = None
             return p
@@ -1102,16 +1128,19 @@ class ProfileStore:
     def save(self, user: str, profile: dict):
         to_save = dict(profile)
         to_save["short_term"] = None
-        with open(self._path(user), "w") as f:
+        open_func = self.fs.open if self.use_hf else open
+        with open_func(self._path(user), "w", encoding="utf-8") as f:
             json.dump(to_save, f)
 
     def delete_user(self, user: str):
         path = self._path(user)
         events_path = self._events_path(user)
-        if os.path.exists(path):
-            os.remove(path)
-        if os.path.exists(events_path):
-            os.remove(events_path)
+        if self.use_hf:
+            if self.fs.exists(path): self.fs.rm(path)
+            if self.fs.exists(events_path): self.fs.rm(events_path)
+        else:
+            if os.path.exists(path): os.remove(path)
+            if os.path.exists(events_path): os.remove(events_path)
 
     def vectors(self, profile: dict) -> dict:
         return {"long_term": profile.get("long_term"), "short_term": profile.get("short_term")}
@@ -1151,8 +1180,20 @@ class ProfileStore:
                  "artist": str(self.engine._artists[row]), "row": int(row)}
         if context:
             event["context"] = context
-        with open(self._events_path(user), "a") as f:
-            f.write(json.dumps(event) + "\n")
+            
+        event_str = json.dumps(event) + "\n"
+        if self.use_hf:
+            # fsspec on HF Buckets doesn't support append ('a') easily, so read, append, rewrite
+            path = self._events_path(user)
+            existing = ""
+            if self.fs.exists(path):
+                with self.fs.open(path, "r", encoding="utf-8") as f:
+                    existing = f.read()
+            with self.fs.open(path, "w", encoding="utf-8") as f:
+                f.write(existing + event_str)
+        else:
+            with open(self._events_path(user), "a", encoding="utf-8") as f:
+                f.write(event_str)
 
     def top_genres(self, profile: dict, n: int = 3):
         return sorted(profile.get("genre_counts", {}).items(), key=lambda x: -x[1])[:n]
@@ -1161,6 +1202,14 @@ class ProfileStore:
         return sorted(profile.get("artist_counts", {}).items(), key=lambda x: -x[1])[:n]
 
     def list_profiles(self) -> List[str]:
+        if self.use_hf:
+            try:
+                files = self.fs.ls(self.dir)
+                users = [f["name"].split("/")[-1][:-5] for f in files if f["name"].endswith(".json") and not f["name"].endswith(".events.jsonl")]
+                return sorted(list(set(users)))
+            except Exception:
+                return []
+        
         if not os.path.exists(self.dir):
             return []
         users = []
@@ -1408,12 +1457,10 @@ def _raw_run_pipeline(query: str, engine: RecommendationEngine, mood_model: Mood
 
 
 if HAS_SPACES and GPU_USAGE:
-    @spaces.GPU
-    def _gpu_run_pipeline(query: str, engine: RecommendationEngine, mood_model: MoodToVector,
-                         dj: RAGDJ, checker: GroundednessChecker, profile: dict, store: ProfileStore,
-                         mode: str = "similar", k: int = 10, search_type: str = "auto",
-                         seed_track: Optional[dict] = None):
-        return _raw_run_pipeline(query, engine, mood_model, dj, checker, profile, store, mode=mode, k=k, search_type=search_type, seed_track=seed_track)
+    # We don't use @spaces.GPU anymore because ZeroGPU fails to pickle 
+    # thread locks (like Gemini API's gRPC locks or FastAPI dependencies)
+    # and the pipeline doesn't actually use PyTorch/CUDA anyway.
+    _gpu_run_pipeline = _raw_run_pipeline
 else:
     _gpu_run_pipeline = _raw_run_pipeline
 
