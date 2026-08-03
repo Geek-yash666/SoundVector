@@ -3,7 +3,7 @@
 // Changing this value forces all users to reload fresh assets
 // and clears any stale localStorage state from the old build.
 // =============================================================
-const BUILD_VERSION = '2.4';
+const BUILD_VERSION = '2.5';
 
 (function _clearStaleBuildCache() {
     const STORE_KEY = 'soundvector_build_version';
@@ -867,7 +867,7 @@ function renderMainData(data) {
         html += `
         <div class="track-card" id="card-${r.row}" onclick="selectTrackForInsights(${r.row}, '${escapeJs(r.name)}', '${escapeJs(r.artist)}', this)">
             <div class="track-info-side">
-                <div class="cover-art-box enrich-art" id="art-${r.row}" data-track-key="${escapeAttr(getTrackKey(r.name, r.artist))}">${getInitialArtHtml(r)}</div>
+                <div class="cover-art-box enrich-art" id="art-${r.row}" data-track-key="${escapeAttr(getTrackKey(r.name, r.artist))}" data-track-name="${escapeAttr(r.name)}" data-artist-name="${escapeAttr(r.artist)}" data-row="${r.row}">${getInitialArtHtml(r)}</div>
                 <div class="track-details">
                     <div class="track-name">${idx + 1}. ${r.name}</div>
                     <div class="track-artist" onclick="event.stopPropagation();openArtistPage('${escapeJs(r.artist)}')">${r.artist} ${r.year ? `· <span style="color:var(--text-dim);">${r.year}</span>` : ''}</div>
@@ -888,14 +888,15 @@ function renderMainData(data) {
                 </div>
             </div>
         </div>`;
-        // Lazy-load enrichment for each rec card
-        queueTrackEnrichment(r.name, r.artist, r.row, r);
+        if (r) seedEnrichCache(r);
     });
     html += `</div>`;
     
     html += `<button id="btn-show-more" class="btn-primary" style="margin-top:20px;width:100%" onclick="loadMoreRecommendations()">Show More Tracks</button>`;
 
-    document.getElementById('recList').innerHTML = html;
+    const recListEl = document.getElementById('recList');
+    recListEl.innerHTML = html;
+    observeEnrichElements(recListEl);
 }
 
 async function loadMoreRecommendations() {
@@ -1339,6 +1340,29 @@ function queueTrackEnrichment(trackName, artistName, row, trackObj) {
     // Debounce: collect for 30ms then flush as one batch
     clearTimeout(_enrichFlushTimer);
     _enrichFlushTimer = setTimeout(_flushEnrichQueue, 30);
+}
+
+const _lazyEnrichObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            const el = entry.target;
+            const name = el.getAttribute('data-track-name');
+            const artist = el.getAttribute('data-artist-name');
+            const row = parseInt(el.getAttribute('data-row') || '-1', 10);
+            if (name && artist) {
+                queueTrackEnrichment(name, artist, row);
+            }
+            observer.unobserve(el);
+        }
+    });
+}, { rootMargin: '250px 0px' });
+
+function observeEnrichElements(container) {
+    const parent = container || document;
+    parent.querySelectorAll('.enrich-art[data-track-name]:not([data-lazy-observed="true"])').forEach(el => {
+        el.setAttribute('data-lazy-observed', 'true');
+        _lazyEnrichObserver.observe(el);
+    });
 }
 
 /**
@@ -1858,7 +1882,7 @@ function renderArtistTracks(tracks) {
         html += `
         <div class="track-card" id="card-a-${t.row}" onclick="selectTrackForInsights(${t.row}, '${escapeJs(t.name)}', '${escapeJs(t.artist)}', this)">
             <div class="track-info-side">
-                <div class="cover-art-box enrich-art" id="art-a-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}">🎵</div>
+                <div class="cover-art-box enrich-art" id="art-a-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}" data-track-name="${escapeAttr(t.name)}" data-artist-name="${escapeAttr(t.artist)}" data-row="${t.row}">${getInitialArtHtml(t)}</div>
                 <div class="track-details">
                     <div class="track-name">${idx + 1}. ${t.name}</div>
                     <div class="track-artist">${t.artist} ${t.year ? `· <span style="color:var(--text-dim);">${t.year}</span>` : ''}</div>
@@ -1867,7 +1891,7 @@ function renderArtistTracks(tracks) {
                         ${t.popularity_pct ? `<span class="signal-badge">popularity ${t.popularity_pct}%</span>` : ''}
                         ${t.tempo_bpm ? `<span class="signal-badge">${t.tempo_bpm} BPM</span>` : ''}
                     </div>
-                    <div class="listen-on-row" id="enrich-a-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}"></div>
+                    <div class="listen-on-row" id="enrich-a-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}" style="${t.deezer_link || t.youtube_music_url ? 'display:flex;' : ''}">${getInitialListenRowHtml(t)}</div>
                 </div>
             </div>
             <div class="track-action-side">
@@ -1878,10 +1902,12 @@ function renderArtistTracks(tracks) {
                 </div>
             </div>
         </div>`;
-        queueTrackEnrichment(t.name, t.artist, t.row, t);
+        if (t) seedEnrichCache(t);
     });
 
-    document.getElementById('artistTracksList').innerHTML = html;
+    const artistListEl = document.getElementById('artistTracksList');
+    artistListEl.innerHTML = html;
+    observeEnrichElements(artistListEl);
 }
 
 // ---- Album view: horizontal cards + accordion expand ----

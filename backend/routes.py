@@ -260,58 +260,72 @@ async def api_batch_enrich(body: BatchEnrichRequest):
 @app.get("/api/artist")
 async def api_artist(name: str = "", sort: str = "popularity"):
     engine, mood_model, dj, checker, store = get_app_components()
-    tracks = engine.artist_all_tracks(name, sort_by=sort, limit=50)
-    albums = engine.artist_albums(name)
+    tracks = engine.artist_all_tracks(name, sort_by=sort, limit=100) if engine else []
+    albums = engine.artist_albums(name) if engine else []
 
     # Use cached key instead of os.environ.get on every request
     lastfm_info = enrich_artist_lastfm(name, _LASTFM_KEY)
 
     existing_names = {(t.get("name") or "").lower().strip() for t in tracks}
     
+    # 1. Merge Last.fm top tracks if missing
     for ltr in lastfm_info.get("top_tracks", []):
-        tn = ltr["name"].lower().strip()
-        if tn not in existing_names:
+        tn = (ltr.get("name") or "").lower().strip()
+        if tn and tn not in existing_names:
             tracks.append(ltr)
             existing_names.add(tn)
 
-    if len(tracks) < 15 and name:
+    # 2. Always fetch live top tracks from iTunes/Deezer to build complete discography
+    if name:
         try:
-            from .external_api import _fetch_json
-            it_q = urllib.parse.quote(name)
-            it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=25")
-            if it_data and it_data.get("results"):
-                for tr in it_data["results"]:
-                    tname = tr.get("trackName", "")
-                    tar = tr.get("artistName", "")
-                    if not tname or name.lower() not in tar.lower():
-                        continue
-                    tn = tname.lower().strip()
-                    if tn not in existing_names:
-                        existing_names.add(tn)
-                        yt_q = urllib.parse.quote(f"{tar} {tname}")
-                        art = (tr.get("artworkUrl100") or "").replace("100x100bb", "300x300bb")
-                        tracks.append({
-                            "row": -1,
-                            "name": tname,
-                            "artist": tar,
-                            "year": str(tr.get("releaseDate", ""))[:4] or "2024",
-                            "popularity_pct": 85,
-                            "base_genres": [(tr.get("primaryGenreName") or "pop").lower()],
-                            "energy": 0.65,
-                            "valence": 0.60,
-                            "danceability": 0.65,
-                            "tempo_bpm": 120,
-                            "deezer_preview_url": tr.get("previewUrl") or "",
-                            "deezer_album_art": art,
-                            "deezer_link": tr.get("trackViewUrl") or "",
-                            "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
-                            "is_live_external": True
-                        })
+            live_tracks = search_live_apis(f"{name} top songs", limit=30)
+            if not live_tracks:
+                live_tracks = search_live_apis(name, limit=30)
+            for tr in live_tracks:
+                tname = tr.get("name", "")
+                tar = tr.get("artist", "")
+                if not tname:
+                    continue
+                tn = tname.lower().strip()
+                if tn not in existing_names:
+                    existing_names.add(tn)
+                    tracks.append(tr)
         except Exception:
             pass
 
+    # 3. Always complement live albums from iTunes/Deezer if local albums list is small/empty
+    if len(albums) < 10 and name:
+        try:
+            live_albs = search_live_albums(name, limit=20)
+            existing_albs = {(a.get("title") or "").lower().strip() for a in albums}
+            for la in live_albs:
+                atitle = (la.get("title") or "").lower().strip()
+                if atitle and atitle not in existing_albs:
+                    existing_albs.add(atitle)
+                    albums.append({
+                        "title": la.get("title"),
+                        "year": la.get("year", "2024"),
+                        "artist": la.get("artist", name),
+                        "cover_art": la.get("cover_art") or la.get("deezer_album_art") or "",
+                        "tracks": la.get("tracks", [])
+                    })
+        except Exception:
+            pass
+
+    # Sort tracks according to request
+    if sort == "popularity":
+        tracks.sort(key=lambda t: t.get("popularity_pct", 50), reverse=True)
+    elif sort == "newest":
+        tracks.sort(key=lambda t: int(t.get("year") or 0) if str(t.get("year", "")).isdigit() else 0, reverse=True)
+    elif sort == "oldest":
+        tracks.sort(key=lambda t: int(t.get("year") or 0) if str(t.get("year", "")).isdigit() else 9999)
+    elif sort == "title":
+        tracks.sort(key=lambda t: (t.get("name") or "").lower())
+
     return {
-        "artist": name, "tracks": tracks, "albums": albums,
+        "artist": name,
+        "tracks": tracks,
+        "albums": albums,
         "lastfm": lastfm_info
     }
 
