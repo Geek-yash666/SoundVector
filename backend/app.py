@@ -494,7 +494,8 @@ class RecommendationEngine:
                             target_base_genres: Optional[set] = None,
                             target_audio: Optional[np.ndarray] = None,
                             candidates: int = 2000, max_per_artist: int = 1,
-                            exclude_rows: Optional[set] = None) -> List[dict]:
+                            exclude_rows: Optional[set] = None,
+                            strict_genre: bool = False) -> List[dict]:
         qv = np.asarray(qv, np.float32)
         n = np.linalg.norm(qv)
         if n > 0:
@@ -527,6 +528,9 @@ class RecommendationEngine:
             pop = self.pop[cand]
             base = (w["embed"] * np.clip(embed_sim, 0, 1) + w["genre"] * genre_sim
                     + w["audio"] * audio_sim + w["popularity"] * pop)
+            
+            if strict_genre and tg:
+                base = base * (genre_sim > 0)
 
             picked, artist_counts, keys_seen = [], {}, set()
             for pos in np.argsort(-base):
@@ -1317,7 +1321,7 @@ def run_pipeline(query: str, engine: RecommendationEngine, mood_model: MoodToVec
                 tg = {"filmi", "modern bollywood", "desi pop", "indian pop", "punjabi pop"}
             
             t = mood_model.transform(f"{hit['name']} {hit['artist']} {' '.join(hit.get('base_genres', []))}")
-            recs = engine.recommend_by_vector(t["vector"], k=k, target_base_genres=tg if tg else None)
+            recs = engine.recommend_by_vector(t["vector"], k=k, target_base_genres=tg if tg else None, strict_genre=is_indian_regional)
             
             # Live recommendation harvesting for out-of-index artist/movie
             artist_live = search_live_apis(f"{hit['artist']} hits", limit=5)
@@ -1327,6 +1331,7 @@ def run_pipeline(query: str, engine: RecommendationEngine, mood_model: MoodToVec
                 for al in artist_live:
                     an = (al.get("name") or "").lower().strip()
                     if an != hit["name"].lower().strip() and an not in existing_names:
+                        al["score"] = 0.92 - len(blended) * 0.03
                         blended.append(al)
                         existing_names.add(an)
                 recs = (blended + recs)[:k]
@@ -1382,51 +1387,7 @@ def run_pipeline(query: str, engine: RecommendationEngine, mood_model: MoodToVec
                     recs = engine.recommend_by_vector(t["vector"], k=k, target_base_genres=tg, target_audio=t["audio"])
                     a = t["audio"]
 
-            # Live Deezer Mood Track Harvesting (Brings real-time hits & 30s preview audio for any mood query)
-            live_mood_tracks = []
-            try:
-                d_q = urllib.parse.quote(query)
-                dz_res = _fetch_json(f"https://api.deezer.com/search?q={d_q}&limit=3")
-                if dz_res and dz_res.get("data"):
-                    for item in dz_res["data"]:
-                        tname = item.get("title", "")
-                        aname = (item.get("artist") or {}).get("name", "")
-                        if not tname or not aname:
-                            continue
-                        art = (item.get("album") or {}).get("cover_medium", "")
-                        yt_q = urllib.parse.quote(f"{aname} {tname}")
-                        live_mood_tracks.append({
-                            "row": -1,
-                            "track_id": f"live_dz_{item.get('id')}",
-                            "name": tname,
-                            "artist": aname,
-                            "year": "2024",
-                            "popularity_pct": 92,
-                            "base_genres": list(tg) if 'tg' in locals() and tg else ["pop"],
-                            "energy": round(float(a[0]), 2),
-                            "valence": round(float(a[1]), 2),
-                            "danceability": round(float(a[2]), 2),
-                            "tempo_bpm": int(a[7] * 150 + 50),
-                            "deezer_preview_url": item.get("preview") or "",
-                            "deezer_album_art": art,
-                            "deezer_link": item.get("link") or "",
-                            "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
-                            "is_live_external": True,
-                            "score": 0.95,
-                        })
-            except Exception:
-                pass
 
-            if live_mood_tracks:
-                existing_names = {(r.get("name") or "").lower().strip() for r in recs}
-                blended = []
-                for live_t in live_mood_tracks:
-                    tn = live_t["name"].lower().strip()
-                    if tn not in existing_names:
-                        blended.append(live_t)
-                        existing_names.add(tn)
-                blended.extend(recs)
-                recs = blended[:k]
 
             gc = Counter()
             for r in recs:
@@ -1661,7 +1622,7 @@ def search_live_apis(query: str, limit: int = 5) -> List[dict]:
                         "artist": aname,
                         "year": str(item.get("releaseDate", "2024"))[:4],
                         "popularity_pct": 95,
-                        "base_genres": [item.get("primaryGenreName", "pop").lower()],
+                        "base_genres": [(item.get("primaryGenreName") or "pop").lower()],
                         "energy": 0.70,
                         "valence": 0.65,
                         "danceability": 0.70,
@@ -1710,6 +1671,52 @@ def search_live_apis(query: str, limit: int = 5) -> List[dict]:
                             "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
                             "is_live_external": True
                         })
+            except Exception:
+                pass
+
+        if len(hits) < limit:
+            try:
+                # Last.fm Search API
+                lfm_key = os.environ.get("LASTFM_API_KEY")
+                if lfm_key:
+                    lf_q = urllib.parse.quote(q_str)
+                    lf_data = _fetch_json(f"http://ws.audioscrobbler.com/2.0/?method=track.search&track={lf_q}&api_key={lfm_key}&format=json&limit={limit}")
+                    if lf_data and (lf_data.get("results") or {}).get("trackmatches", {}).get("track"):
+                        for item in lf_data["results"]["trackmatches"]["track"]:
+                            tname = item.get("name", "")
+                            aname = item.get("artist", "")
+                            if not tname or not aname:
+                                continue
+                            key = f"{tname.lower().strip()}||{aname.lower().strip()}"
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            yt_q = urllib.parse.quote(f"{aname} {tname}")
+                            # Try to get largest image
+                            img_url = ""
+                            imgs = item.get("image")
+                            if isinstance(imgs, list) and len(imgs) > 0:
+                                img_url = imgs[-1].get("#text", "")
+                                
+                            hits.append({
+                                "row": -1,
+                                "track_id": f"live_lastfm_{urllib.parse.quote(tname)}",
+                                "name": tname,
+                                "artist": aname,
+                                "year": "2024",
+                                "popularity_pct": 85,
+                                "base_genres": ["pop"],
+                                "energy": 0.70,
+                                "valence": 0.65,
+                                "danceability": 0.70,
+                                "tempo_bpm": 120,
+                                "deezer_preview_url": "",
+                                "deezer_album_art": img_url,
+                                "deezer_link": item.get("url") or "",
+                                "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
+                                "is_live_external": True,
+                                "source": "lastfm"
+                            })
             except Exception:
                 pass
 
@@ -1784,6 +1791,40 @@ def search_live_albums(query: str, limit: int = 4) -> List[dict]:
                             "track_count": item.get("trackCount", 0),
                             "year": str(item.get("releaseDate", ""))[:4],
                             "source": "itunes"
+                        })
+        except Exception:
+            pass
+
+        try:
+            # 3. Last.fm Album Fallback
+            lfm_key = os.environ.get("LASTFM_API_KEY")
+            if lfm_key and len(albums) < limit:
+                lf_q = urllib.parse.quote(q_str)
+                lf_data = _fetch_json(f"http://ws.audioscrobbler.com/2.0/?method=album.search&album={lf_q}&api_key={lfm_key}&format=json&limit={limit}")
+                if lf_data and (lf_data.get("results") or {}).get("albummatches", {}).get("album"):
+                    for item in lf_data["results"]["albummatches"]["album"]:
+                        atitle = item.get("name", "")
+                        aname = item.get("artist", "")
+                        if not atitle:
+                            continue
+                        key = atitle.lower().strip()
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        
+                        img_url = ""
+                        imgs = item.get("image")
+                        if isinstance(imgs, list) and len(imgs) > 0:
+                            img_url = imgs[-1].get("#text", "")
+                            
+                        albums.append({
+                            "id": f"lfm_{urllib.parse.quote(atitle)}",
+                            "title": atitle,
+                            "artist": aname,
+                            "cover_art": img_url,
+                            "track_count": 0,
+                            "year": "2024",
+                            "source": "lastfm"
                         })
         except Exception:
             pass
@@ -1863,7 +1904,7 @@ def fetch_album_tracks(album_title: str, artist_name: str = "", album_id: str = 
                             "artist": tar,
                             "year": str(tr.get("releaseDate", ""))[:4] or "2024",
                             "popularity_pct": 85,
-                            "base_genres": [tr.get("primaryGenreName", "pop").lower()],
+                            "base_genres": [(tr.get("primaryGenreName") or "pop").lower()],
                             "energy": 0.65,
                             "valence": 0.60,
                             "danceability": 0.65,
@@ -1873,6 +1914,44 @@ def fetch_album_tracks(album_title: str, artist_name: str = "", album_id: str = 
                             "deezer_link": tr.get("trackViewUrl") or "",
                             "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
                             "is_live_external": True
+                        })
+        except Exception:
+            pass
+
+    # 4. Last.fm Album Track Lookup fallback
+    if len(tracks) < 2:
+        try:
+            lfm_key = os.environ.get("LASTFM_API_KEY")
+            if lfm_key:
+                lf_q = urllib.parse.quote(f"{artist_name}".strip())
+                lf_a = urllib.parse.quote(f"{album_title}".strip())
+                lf_data = _fetch_json(f"http://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key={lfm_key}&artist={lf_q}&album={lf_a}&format=json")
+                
+                if lf_data and lf_data.get("album") and lf_data["album"].get("tracks") and lf_data["album"]["tracks"].get("track"):
+                    for tr in lf_data["album"]["tracks"]["track"]:
+                        tname = tr.get("name", "")
+                        if not tname:
+                            continue
+                        
+                        tar = (tr.get("artist") or {}).get("name") or artist_name
+                        yt_q = urllib.parse.quote(f"{tar} {tname}")
+                        tracks.append({
+                            "row": -1,
+                            "name": tname,
+                            "artist": tar,
+                            "year": "2024",
+                            "popularity_pct": 80,
+                            "base_genres": ["pop"],
+                            "energy": 0.65,
+                            "valence": 0.60,
+                            "danceability": 0.65,
+                            "tempo_bpm": 120,
+                            "deezer_preview_url": "",
+                            "deezer_album_art": cover_art,
+                            "deezer_link": tr.get("url") or "",
+                            "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
+                            "is_live_external": True,
+                            "source": "lastfm"
                         })
         except Exception:
             pass
@@ -2144,7 +2223,7 @@ async def api_artist(name: str = "", sort: str = "popularity"):
                             "artist": tar,
                             "year": str(tr.get("releaseDate", ""))[:4] or "2024",
                             "popularity_pct": 85,
-                            "base_genres": [tr.get("primaryGenreName", "pop").lower()],
+                            "base_genres": [(tr.get("primaryGenreName") or "pop").lower()],
                             "energy": 0.65,
                             "valence": 0.60,
                             "danceability": 0.65,
@@ -2520,7 +2599,26 @@ async def api_playlist_gen(req: PlaylistGenRequest):
     if len(track_cards) < count:
         t = mood_model.transform(prompt_clean)
         tg = {BASE_GENRE_MAP.get(tok, tok) for tok in t["matched_tokens"]}
-        vec_recs = engine.recommend_by_vector(t["vector"], k=count * 2, target_base_genres=tg, max_per_artist=2)
+        p_low = prompt_clean.lower()
+        strict_reg = False
+        for reg_kw, mapped_genres in [
+            ("telugu", ["filmi", "desi pop", "indian pop"]),
+            ("hindi", ["filmi", "modern bollywood", "desi pop", "indian pop"]),
+            ("bollywood", ["filmi", "modern bollywood", "desi pop"]),
+            ("punjabi", ["punjabi pop", "desi pop", "filmi"]),
+            ("tamil", ["filmi", "indian pop", "desi pop"]),
+            ("desi", ["desi pop", "filmi", "indian pop"]),
+            ("kpop", ["k-pop", "pop"]), ("k-pop", ["k-pop", "pop"]),
+            ("anime", ["anime", "j-pop"]), ("japanese", ["j-pop", "anime"]),
+            ("latin", ["latin", "reggaeton"]), ("spanish", ["latin", "reggaeton"]),
+            ("afro", ["afrobeats", "afropop"]), ("afrobeats", ["afrobeats", "afropop"]),
+        ]:
+            if reg_kw in p_low:
+                strict_reg = True
+                for g in mapped_genres:
+                    tg.add(g)
+        
+        vec_recs = engine.recommend_by_vector(t["vector"], k=count * 2, target_base_genres=tg if tg else None, max_per_artist=2, strict_genre=strict_reg)
         for r in vec_recs:
             if r.get("row", -1) >= 0:
                 tc = engine.track_card(r["row"])
