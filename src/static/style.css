@@ -1155,17 +1155,19 @@ body.right-collapsed-body .sidebar-reopen-tab {
 }
 
 .cover-art-box {
-    width: 44px;
-    height: 44px;
-    border-radius: 6px;
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
     background: linear-gradient(135deg, #222222, #141414);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
+    font-size: 22px;
     color: var(--text-secondary);
     flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
 }
 
 .track-details {
@@ -2247,8 +2249,12 @@ body.has-player-bar .dj-sidebar {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%) scale(0.85);
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
+}
+
+.btn-act.skip {
+    display: none !important;
 }
 
 .track-card:hover .art-play-overlay,

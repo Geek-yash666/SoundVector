@@ -842,7 +842,6 @@ function renderMainData(data) {
                 <div class="action-buttons">
                     <button class="btn-act like ${activeSig === 'like' ? 'active-like' : ''}" onclick="event.stopPropagation();sendFeedback(${r.row}, 'like', this)">${SVG_ICONS.like}</button>
                     <button class="btn-act dislike ${activeSig === 'dislike' ? 'active-dislike' : ''}" onclick="event.stopPropagation();sendFeedback(${r.row}, 'dislike', this)">${SVG_ICONS.dislike}</button>
-                    <button class="btn-act skip ${activeSig === 'skip' ? 'active-skip' : ''}" onclick="event.stopPropagation();sendFeedback(${r.row}, 'skip', this)">${SVG_ICONS.skip}</button>
                     <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${escapeJs(r.name)}', '${escapeJs(r.artist)}')">${SVG_ICONS.explore} Explore</button>
                 </div>
             </div>
@@ -1120,7 +1119,7 @@ function handlePreviewClick(btn) {
 let playerInterval = null;
 let currentPlayingUrl = null;
 
-function togglePreview(url, row, btn, trackName, artistName, coverArt) {
+async function togglePreview(url, row, btn, trackName, artistName, coverArt) {
     const bar = document.getElementById('globalPlayerBar');
 
     // If clicking the EXACT SAME song URL currently playing, toggle pause/play
@@ -1132,7 +1131,7 @@ function togglePreview(url, row, btn, trackName, artistName, coverArt) {
             if (bar) updatePlayerBarState(false);
             return;
         } else {
-            currentAudio.play();
+            currentAudio.play().catch(e => console.warn("Resume play failed:", e));
             btn.innerHTML = SVG_ICONS.pause;
             btn.classList.add('playing');
             if (bar) updatePlayerBarState(true);
@@ -1142,6 +1141,8 @@ function togglePreview(url, row, btn, trackName, artistName, coverArt) {
 
     // Stop current audio immediately if playing a NEW song
     if (currentAudio) {
+        currentAudio.onerror = null;
+        currentAudio.onended = null;
         currentAudio.pause();
         currentAudio = null;
         if (playerInterval) clearInterval(playerInterval);
@@ -1151,94 +1152,113 @@ function togglePreview(url, row, btn, trackName, artistName, coverArt) {
         });
     }
 
-    currentAudio = new Audio();
-    currentAudio.preload = 'none';
-    currentAudio.crossOrigin = 'anonymous';
-    // Force HTTPS for mobile browser compatibility
-    const initialSrc = url.replace(/^http:\/\//i, 'https://');
-    currentAudio.src = initialSrc;
+    const audio = new Audio();
+    audio.preload = 'none';
+    // NOTE: DO NOT set crossOrigin = 'anonymous' because third-party MP3 CDNs (Deezer, iTunes)
+    // do not return CORS headers for direct media requests, causing browser CORS / 403 blocks.
+    currentAudio = audio;
     currentPlayingUrl = url;
     currentPlayingRow = row;
-    currentAudio.volume = 0.8;
+    audio.volume = 0.8;
 
-    // Handle 403 / Expired link errors gracefully via live iTunes search fallback
-    currentAudio.onerror = async () => {
-        console.warn("Audio preview returned 403 / playback error. Fetching fresh iTunes preview link...");
-        try {
-            const q = `${trackName || ''} ${artistName || ''}`.strip ? `${trackName || ''} ${artistName || ''}`.trim() : (trackName || '');
-            if (q) {
-                const fRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=1`);
-                const fData = await fRes.json();
-                if (fData.results && fData.results[0] && fData.results[0].previewUrl) {
-                    const freshUrl = fData.results[0].previewUrl;
-                    if (currentAudio) {
-                        currentAudio.src = freshUrl;
-                        currentAudio.play().then(() => {
-                            if (bar) updatePlayerBarState(true);
-                        }).catch(e => console.error("Fallback play failed:", e));
+    const startPlayback = (audioObj, srcUrl) => {
+        audioObj.src = srcUrl;
+
+        audioObj.onended = () => {
+            btn.innerHTML = SVG_ICONS.play;
+            btn.classList.remove('playing');
+            currentPlayingRow = null;
+            currentPlayingUrl = null;
+            if (playerInterval) clearInterval(playerInterval);
+            if (bar) updatePlayerBarState(false);
+        };
+
+        return audioObj.play().then(() => {
+            btn.innerHTML = SVG_ICONS.pause;
+            btn.classList.add('playing');
+            if (bar) {
+                bar.classList.remove('hidden');
+                document.body.classList.add('has-player-bar');
+                const nameEl = document.getElementById('playerTrackName');
+                const artistEl = document.getElementById('playerArtistName');
+                const thumbEl = document.getElementById('playerThumb');
+                if (nameEl) nameEl.innerText = trackName || 'Audio Preview';
+                if (artistEl) artistEl.innerText = artistName || 'SoundVector';
+                if (thumbEl) thumbEl.innerHTML = coverArt ? `<img src="${coverArt}">` : '🎵';
+
+                updatePlayerBarState(true);
+
+                if (playerInterval) clearInterval(playerInterval);
+                playerInterval = setInterval(() => {
+                    if (currentAudio && !currentAudio.paused) {
+                        const cur = currentAudio.currentTime || 0;
+                        const dur = currentAudio.duration || 30;
+                        const pct = Math.min(100, (cur / dur) * 100);
+                        const fill = document.getElementById('playerProgressFill');
+                        const txt = document.getElementById('playerCurrentTime');
+                        if (fill) fill.style.width = `${pct}%`;
+                        if (txt) {
+                            const sec = Math.floor(cur % 60);
+                            txt.innerText = `0:${sec < 10 ? '0' : ''}${sec}`;
+                        }
                     }
+                }, 250);
+            }
+            showToast(`▶ 30s preview playing: ${trackName || 'Preview'}`, '🎵');
+            return true;
+        });
+    };
+
+    const initialSrc = url.replace(/^http:\/\//i, 'https://');
+
+    try {
+        await startPlayback(audio, initialSrc);
+    } catch (primaryErr) {
+        console.warn("Primary audio preview failed (403/expired/blocked). Attempting live iTunes fallback...", primaryErr);
+        if (currentAudio !== audio) return;
+
+        let freshUrl = null;
+        try {
+            let cleanTrack = (trackName || '').replace(/\s*[\(\[\{].*?[\)\]\}]/g, '').replace(/ - .*$/, '').trim();
+            let cleanArtist = (artistName || '').split(/[,&/]|feat\.?|ft\.?/i)[0].trim();
+            let q = `${cleanTrack} ${cleanArtist}`.trim();
+            if (!q) q = (trackName || '').trim();
+
+            if (q) {
+                const fRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=3`);
+                const fData = await fRes.json();
+                if (fData.results && fData.results.length > 0) {
+                    const match = fData.results.find(item => item.previewUrl);
+                    if (match) freshUrl = match.previewUrl;
                 }
             }
-        } catch (e) { console.error("Audio fallback error:", e); }
-    };
-
-    currentAudio.play().then(() => {
-        if (bar) {
-            bar.classList.remove('hidden');
-            document.body.classList.add('has-player-bar');
-            const nameEl = document.getElementById('playerTrackName');
-            const artistEl = document.getElementById('playerArtistName');
-            const thumbEl = document.getElementById('playerThumb');
-            if (nameEl) nameEl.innerText = trackName || 'Audio Preview';
-            if (artistEl) artistEl.innerText = artistName || 'SoundVector';
-            if (thumbEl) thumbEl.innerHTML = coverArt ? `<img src="${coverArt}">` : '🎵';
-
-            updatePlayerBarState(true);
-
-            playerInterval = setInterval(() => {
-                if (currentAudio && !currentAudio.paused) {
-                    const cur = currentAudio.currentTime || 0;
-                    const dur = currentAudio.duration || 30;
-                    const pct = Math.min(100, (cur / dur) * 100);
-                    const fill = document.getElementById('playerProgressFill');
-                    const txt = document.getElementById('playerCurrentTime');
-                    if (fill) fill.style.width = `${pct}%`;
-                    if (txt) {
-                        const sec = Math.floor(cur % 60);
-                        txt.innerText = `0:${sec < 10 ? '0' : ''}${sec}`;
-                    }
-                }
-            }, 250);
+        } catch (e) {
+            console.error("iTunes fallback fetch error:", e);
         }
-    }).catch(err => {
-        const isNotSupported = err.name === 'NotSupportedError' || err.message.includes('no supported source');
-        const isNotAllowed = err.name === 'NotAllowedError';
-        if (isNotAllowed) {
-            showToast('Tap the play button to start preview', 'info');
-        } else if (isNotSupported) {
-            showToast('Preview unavailable for this track', 'info');
-        } else {
-            showToast('Preview could not load', 'info');
+
+        if (freshUrl && currentAudio === audio) {
+            try {
+                const freshHttpsUrl = freshUrl.replace(/^http:\/\//i, 'https://');
+                await startPlayback(audio, freshHttpsUrl);
+                return;
+            } catch (fallbackErr) {
+                console.error("Fallback iTunes audio playback failed:", fallbackErr);
+            }
         }
-        // Reset button state on failure
-        btn.innerHTML = SVG_ICONS.play;
-        btn.classList.remove('playing');
-        currentAudio = null;
-        currentPlayingUrl = null;
-    });
 
-    btn.innerHTML = SVG_ICONS.pause;
-    btn.classList.add('playing');
-
-    currentAudio.onended = () => {
-        btn.innerHTML = SVG_ICONS.play;
-        btn.classList.remove('playing');
-        currentPlayingRow = null;
-        currentPlayingUrl = null;
-        if (playerInterval) clearInterval(playerInterval);
-        if (bar) updatePlayerBarState(false);
-    };
-    showToast(`▶ 30s preview playing: ${trackName || 'Preview'}`, '🎵');
+        if (currentAudio === audio) {
+            btn.innerHTML = SVG_ICONS.play;
+            btn.classList.remove('playing');
+            currentAudio = null;
+            currentPlayingUrl = null;
+            const isNotAllowed = primaryErr && primaryErr.name === 'NotAllowedError';
+            if (isNotAllowed) {
+                showToast('Tap play again to start audio', 'info');
+            } else {
+                showToast('Preview unavailable for this track', 'info');
+            }
+        }
+    }
 }
 
 function updatePlayerBarState(isPlaying) {
@@ -1362,7 +1382,7 @@ function renderPlaylistView(data) {
 
     let html = `<div style="display:flex;flex-direction:column;gap:8px;">`;
     (data.tracks || []).forEach((t, i) => {
-        const artHtml = t.deezer_album_art ? `<img src="${t.deezer_album_art}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+        const artHtml = t.deezer_album_art ? `<img src="${t.deezer_album_art}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">` : `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
         const trackKey = getTrackKey(t.name, t.artist);
         html += `
         <div class="artist-track-card" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;cursor:pointer;" onclick="selectDropdownItem('${escapeJs(t.name)}', '${escapeJs(t.artist)}')">
@@ -1580,7 +1600,6 @@ function renderArtistTracks(tracks) {
                 <div class="action-buttons">
                     <button class="btn-act like ${activeSig === 'like' ? 'active-like' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'like', this)">${SVG_ICONS.like}</button>
                     <button class="btn-act dislike ${activeSig === 'dislike' ? 'active-dislike' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'dislike', this)">${SVG_ICONS.dislike}</button>
-                    <button class="btn-act skip ${activeSig === 'skip' ? 'active-skip' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'skip', this)">${SVG_ICONS.skip}</button>
                     <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${escapeJs(t.name)}', '${escapeJs(t.artist)}')">${SVG_ICONS.explore} Explore</button>
                 </div>
             </div>
@@ -1694,7 +1713,6 @@ function renderExpandedAlbum(albums, idx) {
                 <div class="action-buttons">
                     <button class="btn-act like ${activeSig === 'like' ? 'active-like' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'like', this)">${SVG_ICONS.like}</button>
                     <button class="btn-act dislike ${activeSig === 'dislike' ? 'active-dislike' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'dislike', this)">${SVG_ICONS.dislike}</button>
-                    <button class="btn-act skip ${activeSig === 'skip' ? 'active-skip' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'skip', this)">${SVG_ICONS.skip}</button>
                     <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${escapeJs(t.name)}', '${escapeJs(t.artist)}')">${SVG_ICONS.explore} Explore</button>
                 </div>
             </div>
@@ -1776,7 +1794,6 @@ function renderAlbumTrackList(tracks, albumTitle) {
                 <div class="action-buttons">
                     <button class="btn-act like ${activeSig === 'like' ? 'active-like' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'like', this)">${SVG_ICONS.like}</button>
                     <button class="btn-act dislike ${activeSig === 'dislike' ? 'active-dislike' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'dislike', this)">${SVG_ICONS.dislike}</button>
-                    <button class="btn-act skip ${activeSig === 'skip' ? 'active-skip' : ''}" onclick="event.stopPropagation();sendFeedback(${t.row}, 'skip', this)">${SVG_ICONS.skip}</button>
                     <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${t.name.replace(/'/g, "\\'")}', '${t.artist.replace(/'/g, "\\'")}')">${SVG_ICONS.explore} Explore</button>
                 </div>
             </div>
@@ -1889,10 +1906,60 @@ function filterMySongs(filterType, btnElem) {
 }
 
 // ---------------------------------------------------------
+// Horizontal Drag-to-Scroll & Mouse Wheel Support for Desktop
+// ---------------------------------------------------------
+function makeHorizontalScrollable(el) {
+    if (!el || el.dataset.scrollAttached) return;
+    el.dataset.scrollAttached = 'true';
+
+    let isDown = false;
+    let startX, scrollLeft;
+
+    el.addEventListener('mousedown', (e) => {
+        isDown = true;
+        startX = e.pageX - el.offsetLeft;
+        scrollLeft = el.scrollLeft;
+        el.style.cursor = 'grabbing';
+    });
+
+    el.addEventListener('mouseleave', () => {
+        isDown = false;
+        el.style.cursor = '';
+    });
+
+    el.addEventListener('mouseup', () => {
+        isDown = false;
+        el.style.cursor = '';
+    });
+
+    el.addEventListener('mousemove', (e) => {
+        if (!isDown) return;
+        e.preventDefault();
+        const x = e.pageX - el.offsetLeft;
+        const walk = (x - startX) * 1.6;
+        el.scrollLeft = scrollLeft - walk;
+    });
+
+    el.addEventListener('wheel', (e) => {
+        if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) {
+            e.preventDefault();
+            el.scrollLeft += e.deltaY;
+        }
+    }, { passive: false });
+}
+
+function enableAllHorizontalScrolls() {
+    document.querySelectorAll('.album-circles-row, .artist-circles-row, .cards-scroll-row, .search-albums-row').forEach(makeHorizontalScrollable);
+}
+
+// ---------------------------------------------------------
 // Application Init
 // ---------------------------------------------------------
 window.onload = () => {
     loadUsers();
     refreshProfileStats();
-    loadHomePage(); // Start at personalized home instead of Starboy search
+    loadHomePage();
+    
+    // Periodically bind horizontal scroll handlers to newly rendered carousels
+    setInterval(enableAllHorizontalScrolls, 500);
 };

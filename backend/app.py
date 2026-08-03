@@ -493,13 +493,15 @@ class RecommendationEngine:
     def recommend_by_vector(self, qv: np.ndarray, k: int = 15,
                             target_base_genres: Optional[set] = None,
                             target_audio: Optional[np.ndarray] = None,
-                            candidates: int = 2000, max_per_artist: int = 1) -> List[dict]:
+                            candidates: int = 2000, max_per_artist: int = 1,
+                            exclude_rows: Optional[set] = None) -> List[dict]:
         qv = np.asarray(qv, np.float32)
         n = np.linalg.norm(qv)
         if n > 0:
             qv = qv / n
         w = {"embed": 0.55, "genre": 0.20, "audio": 0.10, "popularity": 0.15}
         tg = target_base_genres or set()
+        excluded = {int(self.canonical_row[r]) for r in (exclude_rows or set())}
 
         def gather(pool):
             labels, dist = self.index.knn_query(qv, k=min(pool, len(self.meta)))
@@ -531,6 +533,8 @@ class RecommendationEngine:
                 if len(picked) >= k:
                     break
                 r = int(cand[pos])
+                if r in excluded:
+                    continue
                 key = f"{_norm_title(self._names[r])}||{self.artist_gid[r]}"
                 if key in keys_seen:
                     continue
@@ -970,6 +974,14 @@ class RAGDJ:
     # ------ Playlist Generator ------
 
     def playlist_gen_prompt(self, user_prompt: str, available_genres: List[str], count: int) -> str:
+        lang_directive = ""
+        p_low = user_prompt.lower()
+        for lang in ["telugu", "hindi", "tamil", "punjabi", "spanish", "korean", "japanese", "kannada", "malayalam", "marathi", "bengali"]:
+            if lang in p_low:
+                lang_name = lang.capitalize()
+                lang_directive = f"\nCRITICAL LANGUAGE DIRECTIVE: The user specifically requested {lang_name} music. ALL track search queries in 'specific_tracks' MUST BE REAL, FAMOUS {lang_name} LANGUAGE SONGS BY {lang_name} ARTISTS/COMPOSERS. DO NOT output English, Hindi (unless requested), or any non-{lang_name} tracks under any circumstances!"
+                break
+
         return (
             "You are a world-class music curator AI. The user wants a custom playlist.\n"
             "Analyze their intent, mood, genre, language/country, and vibe, then generate structured parameters AND a list of specific famous track search queries matching their request.\n\n"
@@ -977,7 +989,8 @@ class RAGDJ:
             "1. Output ONLY valid JSON, no markdown formatting.\n"
             "2. 'playlist_name' should be catchy and creative.\n"
             "3. 'description' should be a sleek 1-sentence summary.\n"
-            "4. 'specific_tracks' MUST be an array of 12-20 specific famous song titles with artist names (e.g. [\"Song Name Artist Name\", ...]) that PERFECTLY match the user request. If a specific language (e.g. Telugu, Hindi, Tamil, Punjabi, K-Pop) or song reference (e.g. 'songs like Believer') is requested, return ONLY real, famous songs matching that exact language/style!\n\n"
+            "4. 'specific_tracks' MUST be an array of 12-20 specific famous song titles with artist names (e.g. [\"Song Name Artist Name\", ...]) that PERFECTLY match the user request."
+            f"{lang_directive}\n\n"
             f"User Request: \"{user_prompt}\"\n"
             f"Tracks Requested: {count}\n\n"
             'Return JSON format:\n'
@@ -1290,8 +1303,34 @@ def run_pipeline(query: str, engine: RecommendationEngine, mood_model: MoodToVec
         live_hits = search_live_apis(query, limit=1) if search_type != "nlp" else None
         if live_hits:
             hit = live_hits[0]
+            hit_text = f"{hit['name']} {hit['artist']} {query}".lower()
+            
+            # Detect regional / Indian music indicators
+            is_indian_regional = any(kw in hit_text for kw in [
+                "raat", "stree", "aaj", "dil", "pyar", "ishq", "tera", "meri", "hindi", "telugu",
+                "tamil", "punjabi", "bollywood", "bhattacharya", "arijit", "pritam", "shreya",
+                "sachin", "jigar", "badshah", "diljit", "harris", "jayaraj", "devi sri", "thaman", "anirudh"
+            ])
+
+            tg = set()
+            if is_indian_regional:
+                tg = {"filmi", "modern bollywood", "desi pop", "indian pop", "punjabi pop"}
+            
             t = mood_model.transform(f"{hit['name']} {hit['artist']} {' '.join(hit.get('base_genres', []))}")
-            recs = engine.recommend_by_vector(t["vector"], k=k)
+            recs = engine.recommend_by_vector(t["vector"], k=k, target_base_genres=tg if tg else None)
+            
+            # Live recommendation harvesting for out-of-index artist/movie
+            artist_live = search_live_apis(f"{hit['artist']} hits", limit=5)
+            if artist_live:
+                existing_names = {(r.get("name") or "").lower().strip() for r in recs}
+                blended = []
+                for al in artist_live:
+                    an = (al.get("name") or "").lower().strip()
+                    if an != hit["name"].lower().strip() and an not in existing_names:
+                        blended.append(al)
+                        existing_names.add(an)
+                recs = (blended + recs)[:k]
+
             facts = hit
             header = f"{hit['name']} — {hit['artist']}"
         else:
@@ -1579,6 +1618,16 @@ def enrich_track(track_name: str, artist_name: str, lastfm_key: Optional[str] = 
     return result
 
 
+def _clean_search_query(query: str) -> str:
+    """Strip 4-digit release years and fluff words (movie, album, soundtrack, ost, songs) for fallback API searches."""
+    if not query:
+        return ""
+    q = re.sub(r'\b(19|20)\d{2}\b', '', query, flags=re.IGNORECASE)
+    q = re.sub(r'\b(movie|album|soundtrack|ost|songs|song|track|tracks|full)\b', '', q, flags=re.IGNORECASE)
+    q = re.sub(r'\s+', ' ', q).strip()
+    return q
+
+
 def search_live_apis(query: str, limit: int = 5) -> List[dict]:
     """Search iTunes & Deezer live APIs in real-time for out-of-index songs (e.g. brand new releases like 'Normal' by BTS)."""
     if not query or len(query.strip()) < 2:
@@ -1587,80 +1636,88 @@ def search_live_apis(query: str, limit: int = 5) -> List[dict]:
     seen = set()
     q_clean = query.strip()
     
-    try:
-        # iTunes Search API
-        it_q = urllib.parse.quote(q_clean)
-        it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit={limit}")
-        if it_data and it_data.get("results"):
-            for item in it_data["results"]:
-                tname = item.get("trackName", "")
-                aname = item.get("artistName", "")
-                if not tname or not aname:
-                    continue
-                key = f"{tname.lower().strip()}||{aname.lower().strip()}"
-                if key in seen:
-                    continue
-                seen.add(key)
-                art = (item.get("artworkUrl100") or "").replace("100x100bb", "300x300bb")
-                yt_q = urllib.parse.quote(f"{aname} {tname}")
-                hits.append({
-                    "row": -1,
-                    "track_id": f"live_itunes_{item.get('trackId')}",
-                    "name": tname,
-                    "artist": aname,
-                    "year": str(item.get("releaseDate", "2024"))[:4],
-                    "popularity_pct": 95,
-                    "base_genres": [item.get("primaryGenreName", "pop").lower()],
-                    "energy": 0.70,
-                    "valence": 0.65,
-                    "danceability": 0.70,
-                    "tempo_bpm": 120,
-                    "deezer_preview_url": item.get("previewUrl") or "",
-                    "deezer_album_art": art,
-                    "deezer_link": item.get("trackViewUrl") or "",
-                    "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
-                    "is_live_external": True
-                })
-    except Exception:
-        pass
-
-    if len(hits) < limit:
+    def _do_search(q_str):
+        nonlocal hits, seen
         try:
-            # Deezer Search API
-            dz_q = urllib.parse.quote(q_clean)
-            dz_data = _fetch_json(f"https://api.deezer.com/search?q={dz_q}&limit={limit}")
-            if dz_data and dz_data.get("data"):
-                for item in dz_data["data"]:
-                    tname = item.get("title", "")
-                    aname = (item.get("artist") or {}).get("name", "")
+            # iTunes Search API
+            it_q = urllib.parse.quote(q_str)
+            it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit={limit}")
+            if it_data and it_data.get("results"):
+                for item in it_data["results"]:
+                    tname = item.get("trackName", "")
+                    aname = item.get("artistName", "")
                     if not tname or not aname:
                         continue
                     key = f"{tname.lower().strip()}||{aname.lower().strip()}"
                     if key in seen:
                         continue
                     seen.add(key)
-                    art = (item.get("album") or {}).get("cover_medium", "")
+                    art = (item.get("artworkUrl100") or "").replace("100x100bb", "300x300bb")
                     yt_q = urllib.parse.quote(f"{aname} {tname}")
                     hits.append({
                         "row": -1,
-                        "track_id": f"live_deezer_{item.get('id')}",
+                        "track_id": f"live_itunes_{item.get('trackId')}",
                         "name": tname,
                         "artist": aname,
-                        "year": "2024",
-                        "popularity_pct": 90,
-                        "base_genres": ["pop"],
+                        "year": str(item.get("releaseDate", "2024"))[:4],
+                        "popularity_pct": 95,
+                        "base_genres": [item.get("primaryGenreName", "pop").lower()],
                         "energy": 0.70,
                         "valence": 0.65,
                         "danceability": 0.70,
                         "tempo_bpm": 120,
-                        "deezer_preview_url": item.get("preview") or "",
+                        "deezer_preview_url": item.get("previewUrl") or "",
                         "deezer_album_art": art,
-                        "deezer_link": item.get("link") or "",
+                        "deezer_link": item.get("trackViewUrl") or "",
                         "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
                         "is_live_external": True
                     })
         except Exception:
             pass
+
+        if len(hits) < limit:
+            try:
+                # Deezer Search API
+                dz_q = urllib.parse.quote(q_str)
+                dz_data = _fetch_json(f"https://api.deezer.com/search?q={dz_q}&limit={limit}")
+                if dz_data and dz_data.get("data"):
+                    for item in dz_data["data"]:
+                        tname = item.get("title", "")
+                        aname = (item.get("artist") or {}).get("name", "")
+                        if not tname or not aname:
+                            continue
+                        key = f"{tname.lower().strip()}||{aname.lower().strip()}"
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        art = (item.get("album") or {}).get("cover_medium", "")
+                        yt_q = urllib.parse.quote(f"{aname} {tname}")
+                        hits.append({
+                            "row": -1,
+                            "track_id": f"live_deezer_{item.get('id')}",
+                            "name": tname,
+                            "artist": aname,
+                            "year": "2024",
+                            "popularity_pct": 90,
+                            "base_genres": ["pop"],
+                            "energy": 0.70,
+                            "valence": 0.65,
+                            "danceability": 0.70,
+                            "tempo_bpm": 120,
+                            "deezer_preview_url": item.get("preview") or "",
+                            "deezer_album_art": art,
+                            "deezer_link": item.get("link") or "",
+                            "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
+                            "is_live_external": True
+                        })
+            except Exception:
+                pass
+
+    _do_search(q_clean)
+    if not hits:
+        cleaned_q = _clean_search_query(q_clean)
+        if cleaned_q and cleaned_q.lower() != q_clean.lower():
+            _do_search(cleaned_q)
 
     return hits[:limit]
 
@@ -1673,61 +1730,69 @@ def search_live_albums(query: str, limit: int = 4) -> List[dict]:
     seen = set()
     q_clean = query.strip()
 
-    try:
-        # 1. Deezer Album Search
-        d_q = urllib.parse.quote(q_clean)
-        d_data = _fetch_json(f"https://api.deezer.com/search/album?q={d_q}&limit={limit}")
-        if d_data and d_data.get("data"):
-            for item in d_data["data"]:
-                atitle = item.get("title", "")
-                aname = (item.get("artist") or {}).get("name", "")
-                aid = item.get("id")
-                if not atitle:
-                    continue
-                key = atitle.lower().strip()
-                if key in seen:
-                    continue
-                seen.add(key)
-                art = item.get("cover_medium") or item.get("cover_big") or ""
-                albums.append({
-                    "id": str(aid),
-                    "title": atitle,
-                    "artist": aname,
-                    "cover_art": art,
-                    "track_count": item.get("nb_tracks", 0),
-                    "source": "deezer"
-                })
-    except Exception:
-        pass
-
-    try:
-        # 2. iTunes Album Fallback
-        if len(albums) < limit:
-            it_q = urllib.parse.quote(q_clean)
-            it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=album&limit={limit}")
-            if it_data and it_data.get("results"):
-                for item in it_data["results"]:
-                    atitle = item.get("collectionName", "")
-                    aname = item.get("artistName", "")
-                    aid = item.get("collectionId")
+    def _do_album_search(q_str):
+        nonlocal albums, seen
+        try:
+            # 1. Deezer Album Search
+            d_q = urllib.parse.quote(q_str)
+            d_data = _fetch_json(f"https://api.deezer.com/search/album?q={d_q}&limit={limit}")
+            if d_data and d_data.get("data"):
+                for item in d_data["data"]:
+                    atitle = item.get("title", "")
+                    aname = (item.get("artist") or {}).get("name", "")
+                    aid = item.get("id")
                     if not atitle:
                         continue
                     key = atitle.lower().strip()
                     if key in seen:
                         continue
                     seen.add(key)
-                    art = (item.get("artworkUrl100") or "").replace("100x100bb", "300x300bb")
+                    art = item.get("cover_medium") or item.get("cover_big") or ""
                     albums.append({
                         "id": str(aid),
                         "title": atitle,
                         "artist": aname,
                         "cover_art": art,
-                        "track_count": item.get("trackCount", 0),
-                        "year": str(item.get("releaseDate", ""))[:4],
-                        "source": "itunes"
+                        "track_count": item.get("nb_tracks", 0),
+                        "source": "deezer"
                     })
-    except Exception:
-        pass
+        except Exception:
+            pass
+
+        try:
+            # 2. iTunes Album Fallback
+            if len(albums) < limit:
+                it_q = urllib.parse.quote(q_str)
+                it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=album&limit={limit}")
+                if it_data and it_data.get("results"):
+                    for item in it_data["results"]:
+                        atitle = item.get("collectionName", "")
+                        aname = item.get("artistName", "")
+                        aid = item.get("collectionId")
+                        if not atitle:
+                            continue
+                        key = atitle.lower().strip()
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        art = (item.get("artworkUrl100") or "").replace("100x100bb", "300x300bb")
+                        albums.append({
+                            "id": str(aid),
+                            "title": atitle,
+                            "artist": aname,
+                            "cover_art": art,
+                            "track_count": item.get("trackCount", 0),
+                            "year": str(item.get("releaseDate", ""))[:4],
+                            "source": "itunes"
+                        })
+        except Exception:
+            pass
+
+    _do_album_search(q_clean)
+    if not albums:
+        cleaned_q = _clean_search_query(q_clean)
+        if cleaned_q and cleaned_q.lower() != q_clean.lower():
+            _do_album_search(cleaned_q)
 
     return albums[:limit]
 
@@ -2151,6 +2216,25 @@ async def api_home(user: str = "default"):
     profile = store.load(user)
     profile_vecs = store.vectors(profile) if profile.get("n_events") else None
     sections = []
+    global_seen_rows = set()
+    global_seen_keys = set()
+
+    def _track_key(track):
+        return f"{(track.get('name') or '').lower().strip()}||{(track.get('artist') or '').lower().strip()}"
+
+    def _filter_unique(cards):
+        nonlocal global_seen_rows, global_seen_keys
+        unique = []
+        for c in cards:
+            r = c.get("row", -1)
+            k = _track_key(c)
+            if (r >= 0 and r in global_seen_rows) or (k in global_seen_keys):
+                continue
+            if r >= 0:
+                global_seen_rows.add(r)
+            global_seen_keys.add(k)
+            unique.append(c)
+        return unique
 
     import datetime
     hour = datetime.datetime.now().hour
@@ -2166,22 +2250,25 @@ async def api_home(user: str = "default"):
     has_history = profile.get("n_events", 0) > 0
 
     if has_history and profile.get("long_term") is not None:
+        # ---- Stack 1: Your Vibe ----
         try:
             lt_vec = np.asarray(profile["long_term"], np.float32)
             n = np.linalg.norm(lt_vec)
             if n > 0:
                 lt_vec = lt_vec / n
-            vibe_recs = engine.recommend_by_vector(lt_vec, k=10, max_per_artist=1)
-            vibe_cards = [engine.track_card(r["row"]) for r in vibe_recs]
-            sections.append({
-                "id": "your_vibe",
-                "title": "Your Vibe",
-                "subtitle": "Based on your taste profile",
-                "tracks": vibe_cards,
-            })
-        except Exception:
-            pass
+            vibe_recs = engine.recommend_by_vector(lt_vec, k=15, max_per_artist=1, exclude_rows=global_seen_rows)
+            vibe_cards = _filter_unique([engine.track_card(r["row"]) for r in vibe_recs])[:10]
+            if vibe_cards:
+                sections.append({
+                    "id": "your_vibe",
+                    "title": "Your Vibe",
+                    "subtitle": "Based on your taste profile",
+                    "tracks": vibe_cards,
+                })
+        except Exception as e:
+            print("[Home Feed] Section 1 error:", e)
 
+        # ---- Stack 2: Because You Like [Top Artist / Track] ----
         top_artists = store.top_artists(profile, 3)
         if top_artists:
             top_artist_name = top_artists[0][0]
@@ -2189,40 +2276,47 @@ async def api_home(user: str = "default"):
                 at = engine.artist_top_tracks(top_artist_name, limit=1)
                 if at:
                     artist_recs = engine.recommend(
-                        [at[0]["row"]], k=10, mode="similar",
-                        profile_vectors=profile_vecs, max_per_artist=1
+                        [at[0]["row"]], k=15, mode="similar",
+                        profile_vectors=profile_vecs, max_per_artist=1, exclude_rows=global_seen_rows
                     )
-                    artist_cards = [engine.track_card(r["row"]) for r in artist_recs]
-                    sections.append({
-                        "id": "because_artist",
-                        "title": f"Because You Like {top_artist_name}",
-                        "subtitle": f"Tracks similar to {top_artist_name}'s style",
-                        "tracks": artist_cards,
-                    })
-            except Exception:
-                pass
+                    artist_cards = _filter_unique([engine.track_card(r["row"]) for r in artist_recs])[:10]
+                    if artist_cards:
+                        sections.append({
+                            "id": "because_artist",
+                            "title": f"Because You Like {top_artist_name}",
+                            "subtitle": f"Tracks similar to {top_artist_name}'s style",
+                            "tracks": artist_cards,
+                        })
+            except Exception as e:
+                print("[Home Feed] Section 2 error:", e)
 
+        # ---- Stack 3: Discover Something New (Outside Comfort Zone) ----
         try:
-            lt_vec2 = np.asarray(profile["long_term"], np.float32)
-            n2 = np.linalg.norm(lt_vec2)
-            if n2 > 0:
-                lt_vec2 = lt_vec2 / n2
-            discover_recs = engine.recommend_by_vector(
-                lt_vec2, k=10, max_per_artist=1
-            )
-            discover_recs = discover_recs[::-1][:10]
-            discover_cards = [engine.track_card(r["row"]) for r in discover_recs]
-            sections.append({
-                "id": "discover_new",
-                "title": "Discover Something New",
-                "subtitle": "Step outside your comfort zone",
-                "tracks": discover_cards,
-            })
-        except Exception:
-            pass
+            top_genres = [g[0] for g in store.top_genres(profile, 3)]
+            all_genres = ["filmi", "hip hop", "rock", "edm", "r&b", "indie", "pop", "latin", "punjabi pop"]
+            other_genres = [g for g in all_genres if g not in top_genres]
+            target_disc_genres = set(other_genres[:4]) if other_genres else {"rock", "indie", "r&b", "edm"}
 
-        top_genres = store.top_genres(profile, 5)
-        quick_genres = [g[0] for g in top_genres] if top_genres else []
+            discover_recs = engine.recommend_by_vector(
+                lt_vec if 'lt_vec' in locals() else np.random.randn(96).astype(np.float32),
+                k=25,
+                target_base_genres=target_disc_genres,
+                max_per_artist=1,
+                exclude_rows=global_seen_rows
+            )
+            discover_cards = _filter_unique([engine.track_card(r["row"]) for r in discover_recs])[:10]
+            if discover_cards:
+                sections.append({
+                    "id": "discover_new",
+                    "title": "Discover Something New",
+                    "subtitle": "Step outside your comfort zone",
+                    "tracks": discover_cards,
+                })
+        except Exception as e:
+            print("[Home Feed] Section 3 error:", e)
+
+        top_genres_data = store.top_genres(profile, 5)
+        quick_genres = [g[0] for g in top_genres_data] if top_genres_data else []
     else:
         quick_genres = ["pop", "hip hop", "rock", "edm", "r&b"]
 
@@ -2230,45 +2324,48 @@ async def api_home(user: str = "default"):
             popular_seeds = engine.search("Shape of You", limit=1)
             if popular_seeds:
                 pop_recs = engine.recommend(
-                    [popular_seeds[0]["row"]], k=10, mode="popular"
+                    [popular_seeds[0]["row"]], k=15, mode="popular", exclude_rows=global_seen_rows
                 )
-                pop_cards = [engine.track_card(r["row"]) for r in pop_recs]
-                sections.append({
-                    "id": "trending",
-                    "title": "Trending Now",
-                    "subtitle": "Popular tracks across genres",
-                    "tracks": pop_cards,
-                })
+                pop_cards = _filter_unique([engine.track_card(r["row"]) for r in pop_recs])[:10]
+                if pop_cards:
+                    sections.append({
+                        "id": "trending",
+                        "title": "Trending Now",
+                        "subtitle": "Popular tracks across genres",
+                        "tracks": pop_cards,
+                    })
         except Exception:
             pass
 
         try:
             chill_t = mood_model.transform("chill lo-fi ambient relax")
             chill_recs = engine.recommend_by_vector(
-                chill_t["vector"], k=10, max_per_artist=1
+                chill_t["vector"], k=15, max_per_artist=1, exclude_rows=global_seen_rows
             )
-            chill_cards = [engine.track_card(r["row"]) for r in chill_recs]
-            sections.append({
-                "id": "chill_vibes",
-                "title": "Chill Vibes",
-                "subtitle": "Relax and unwind",
-                "tracks": chill_cards,
-            })
+            chill_cards = _filter_unique([engine.track_card(r["row"]) for r in chill_recs])[:10]
+            if chill_cards:
+                sections.append({
+                    "id": "chill_vibes",
+                    "title": "Chill Vibes",
+                    "subtitle": "Relax and unwind",
+                    "tracks": chill_cards,
+                })
         except Exception:
             pass
 
         try:
             energy_t = mood_model.transform("workout edm energy dance")
             energy_recs = engine.recommend_by_vector(
-                energy_t["vector"], k=10, max_per_artist=1
+                energy_t["vector"], k=15, max_per_artist=1, exclude_rows=global_seen_rows
             )
-            energy_cards = [engine.track_card(r["row"]) for r in energy_recs]
-            sections.append({
-                "id": "energy_boost",
-                "title": "Energy Boost",
-                "subtitle": "Get pumped up",
-                "tracks": energy_cards,
-            })
+            energy_cards = _filter_unique([engine.track_card(r["row"]) for r in energy_recs])[:10]
+            if energy_cards:
+                sections.append({
+                    "id": "energy_boost",
+                    "title": "Energy Boost",
+                    "subtitle": "Get pumped up",
+                    "tracks": energy_cards,
+                })
         except Exception:
             pass
 
@@ -2360,13 +2457,25 @@ async def api_playlist_gen(req: PlaylistGenRequest):
     track_cards = []
     seen_keys = set()
 
+    # Check if a specific language is requested
+    detected_lang = None
+    for l_kw in ["telugu", "hindi", "tamil", "punjabi", "spanish", "korean", "japanese", "kannada", "malayalam", "marathi", "bengali"]:
+        if l_kw in p_lower:
+            detected_lang = l_kw
+            break
+
     specific_queries = gen_params.get("specific_tracks", []) if gen_params else []
     if specific_queries and isinstance(specific_queries, list):
         for q_str in specific_queries[:count + 5]:
             if not q_str or not isinstance(q_str, str):
                 continue
+            if detected_lang and detected_lang not in q_str.lower():
+                q_str_search = f"{q_str} {detected_lang}"
+            else:
+                q_str_search = q_str
+
             found_card = None
-            hits = engine.search(q_str, limit=1)
+            hits = engine.search(q_str_search, limit=1)
             if hits:
                 h = hits[0]
                 k = f"{(h.get('name') or '').lower().strip()}||{(h.get('artist') or '').lower().strip()}"
@@ -2374,7 +2483,7 @@ async def api_playlist_gen(req: PlaylistGenRequest):
                     found_card = engine.track_card(h["row"])
             
             if not found_card:
-                live_hits = search_live_apis(q_str, limit=1)
+                live_hits = search_live_apis(q_str_search, limit=1)
                 if live_hits:
                     lh = live_hits[0]
                     k = f"{(lh.get('name') or '').lower().strip()}||{(lh.get('artist') or '').lower().strip()}"
