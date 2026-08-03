@@ -3733,11 +3733,20 @@ body.has-player-bar .dj-sidebar {
     user-select: none;
 }
 
+/* Adjust FAB position when player bar is open on desktop */
+body.has-player-bar .ai-playlist-fab {
+    transform: translateY(-85px);
+}
+
 .ai-playlist-fab:hover {
     background: #252525;
     border-color: rgba(255, 255, 255, 0.2);
     transform: translateY(-2px);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.8);
+}
+
+body.has-player-bar .ai-playlist-fab:hover {
+    transform: translateY(-87px);
 }
 
 .ai-playlist-fab svg {
@@ -4027,6 +4036,14 @@ body.has-player-bar .dj-sidebar {
         right: 14px;
         padding: 8px 14px;
         font-size: 12px;
+    }
+
+    /* Adjust FAB position when player bar is open on mobile */
+    body.has-player-bar .ai-playlist-fab {
+        transform: translateY(-75px);
+    }
+    body.has-player-bar .ai-playlist-fab:hover {
+        transform: translateY(-77px);
     }
 
     .ai-playlist-widget {

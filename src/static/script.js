@@ -173,32 +173,27 @@ function openMobileInsights() {
     const navIM = document.getElementById('navIntelMobile');
     if (navIM) navIM.classList.add('active');
 
-    const pBox = document.getElementById('profileBox');
-    const djPanel = document.getElementById('djIntelPanel');
-    const aPanel = document.getElementById('audioVectorPanel');
+    const pBox = document.querySelector('.profile-box');
+    const djSidebar = document.querySelector('.dj-sidebar');
 
     body.innerHTML = '';
     
     if (pBox) {
         const pClone = pBox.cloneNode(true);
-        pClone.id = pClone.id + '_mobile';
+        pClone.id = (pClone.id || 'profileBox') + '_mobile';
         pClone.style.marginBottom = '16px';
         pClone.classList.remove('hidden');
         body.appendChild(pClone);
     }
-    if (djPanel) {
-        const djClone = djPanel.cloneNode(true);
-        djClone.id = djClone.id + '_mobile';
-        djClone.style.marginBottom = '16px';
-        djClone.classList.remove('hidden');
-        body.appendChild(djClone);
-    }
-    if (aPanel) {
-        const aClone = aPanel.cloneNode(true);
-        aClone.id = aClone.id + '_mobile';
-        aClone.style.marginBottom = '16px';
-        aClone.classList.remove('hidden');
-        body.appendChild(aClone);
+    
+    if (djSidebar) {
+        const panels = djSidebar.querySelectorAll('.panel-box');
+        panels.forEach((p, idx) => {
+            const pClone = p.cloneNode(true);
+            pClone.id = p.id ? p.id + '_mobile' : 'dj_panel_mobile_' + idx;
+            pClone.style.marginBottom = '16px';
+            body.appendChild(pClone);
+        });
     }
 
     modal.classList.remove('hidden');
