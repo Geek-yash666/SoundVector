@@ -1424,6 +1424,10 @@ def _raw_run_pipeline(query: str, engine: RecommendationEngine, mood_model: Mood
                      seed_track: Optional[dict] = None):
     return run_pipeline(query, engine, mood_model, dj, checker, profile, store, mode=mode, k=k, search_type=search_type, seed_track=seed_track)
 
+if HAS_SPACES and GPU_USAGE:
+    @spaces.GPU
+    def _dummy_gpu_function():
+        pass
 
 _gpu_run_pipeline = _raw_run_pipeline
 
