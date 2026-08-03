@@ -260,15 +260,49 @@ async def async_enrich_track(track: dict, lastfm_key: Optional[str] = None) -> d
     if not tname or not aname:
         return track
 
+    cache_key = f"{tname.lower().strip()}||{aname.lower().strip()}"
+    cached = _ENRICH_CACHE.get(cache_key)
+    if cached is not None:
+        for k, v in cached.items():
+            if v and not track.get(k):
+                track[k] = v
+        return track
+
+    primary_artist, clean_track = _build_clean_names(tname, aname)
+    
+    yt_q = urllib.parse.quote(f"{primary_artist} {clean_track}")
+    result = {
+        "youtube_music_url": f"https://music.youtube.com/search?q={yt_q}",
+        "youtube_url": f"https://www.youtube.com/results?search_query={yt_q}",
+    }
+
     loop = asyncio.get_event_loop()
     try:
-        enriched = await loop.run_in_executor(_HTTP_POOL, enrich_track, tname, aname, lastfm_key)
-        if enriched and isinstance(enriched, dict):
-            for k, v in enriched.items():
-                if v and not track.get(k):
-                    track[k] = v
+        deezer_task = loop.run_in_executor(_HTTP_POOL, _fetch_deezer_enrichment, primary_artist, clean_track)
+        itunes_task = loop.run_in_executor(_HTTP_POOL, _fetch_itunes_enrichment, primary_artist, clean_track)
+        
+        deezer_result, itunes_result = await asyncio.gather(deezer_task, itunes_task, return_exceptions=True)
+        
+        if isinstance(deezer_result, dict):
+            result.update(deezer_result)
+        if isinstance(itunes_result, dict):
+            if not result.get("deezer_preview_url") and itunes_result.get("itunes_preview_url"):
+                result["deezer_preview_url"] = itunes_result["itunes_preview_url"]
+            if not result.get("deezer_album_art") and itunes_result.get("itunes_album_art"):
+                result["deezer_album_art"] = itunes_result["itunes_album_art"]
+            if not result.get("deezer_link") and itunes_result.get("itunes_link"):
+                result["deezer_link"] = itunes_result["itunes_link"]
+
+        # Only cache if we actually found artwork (meaning it was a success, not a rate limit failure)
+        if result.get("deezer_album_art") or result.get("deezer_preview_url"):
+            _ENRICH_CACHE[cache_key] = result
+
+        for k, v in result.items():
+            if v and not track.get(k):
+                track[k] = v
     except Exception:
         pass
+    
     return track
 
 

@@ -3,7 +3,7 @@
 // Changing this value forces all users to reload fresh assets
 // and clears any stale localStorage state from the old build.
 // =============================================================
-const BUILD_VERSION = '2.0';
+const BUILD_VERSION = '2.4';
 
 (function _clearStaleBuildCache() {
     const STORE_KEY = 'soundvector_build_version';
@@ -689,13 +689,13 @@ function renderHomeSection(section) {
 
         html += `
             <div class="home-track-card" id="card-hs-${t.row}" onclick="onHomeCardClick(${t.row}, '${escapeJs(t.name)}', '${escapeJs(t.artist)}')">
-                <div class="home-card-art enrich-art" id="art-hs-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}">🎵</div>
+                <div class="home-card-art enrich-art" id="art-hs-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}">${getInitialArtHtml(t)}</div>
                 <div class="home-card-name" title="${escapeAttr(t.name)}">${t.name || 'Unknown'}</div>
                 <div class="home-card-artist" onclick="event.stopPropagation();openArtistPage('${escapeJs(t.artist)}')" title="${escapeAttr(t.artist)}">${t.artist || 'Unknown'}</div>
                 <div class="home-card-meta">
                     ${genres.map(g => `<span class="genre-badge ${getGenreClass(g)}">${g}</span>`).join('')}
                 </div>
-                <div class="listen-on-row" id="enrich-hs-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}"></div>
+                <div class="listen-on-row" id="enrich-hs-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}" style="${t.deezer_link || t.youtube_music_url ? 'display:flex;' : ''}">${getInitialListenRowHtml(t)}</div>
             </div>`;
         queueTrackEnrichment(t.name, t.artist, t.row, t);
     });
@@ -867,7 +867,7 @@ function renderMainData(data) {
         html += `
         <div class="track-card" id="card-${r.row}" onclick="selectTrackForInsights(${r.row}, '${escapeJs(r.name)}', '${escapeJs(r.artist)}', this)">
             <div class="track-info-side">
-                <div class="cover-art-box enrich-art" id="art-${r.row}" data-track-key="${escapeAttr(getTrackKey(r.name, r.artist))}">🎵</div>
+                <div class="cover-art-box enrich-art" id="art-${r.row}" data-track-key="${escapeAttr(getTrackKey(r.name, r.artist))}">${getInitialArtHtml(r)}</div>
                 <div class="track-details">
                     <div class="track-name">${idx + 1}. ${r.name}</div>
                     <div class="track-artist" onclick="event.stopPropagation();openArtistPage('${escapeJs(r.artist)}')">${r.artist} ${r.year ? `· <span style="color:var(--text-dim);">${r.year}</span>` : ''}</div>
@@ -876,7 +876,7 @@ function renderMainData(data) {
                         ${sigs.audio ? `<span class="signal-badge">audio ${sigs.audio.toFixed(2)}</span>` : ''}
                         ${sigs.genre ? `<span class="signal-badge">genre ${sigs.genre.toFixed(2)}</span>` : ''}
                     </div>
-                    <div class="listen-on-row" id="enrich-${r.row}" data-track-key="${escapeAttr(getTrackKey(r.name, r.artist))}"></div>
+                    <div class="listen-on-row" id="enrich-${r.row}" data-track-key="${escapeAttr(getTrackKey(r.name, r.artist))}" style="${r.deezer_link || r.youtube_music_url ? 'display:flex;' : ''}">${getInitialListenRowHtml(r)}</div>
                 </div>
             </div>
             <div class="track-action-side">
@@ -1184,6 +1184,40 @@ function seedEnrichCache(track) {
     }
 }
 
+function getInitialArtHtml(t) {
+    if (!t) return '🎵';
+    const key = getTrackKey(t.name, t.artist);
+    const data = t.deezer_album_art ? t : (enrichCache[key] || {});
+    if (data.deezer_album_art) {
+        let overlayHtml = '';
+        if (data.deezer_preview_url) {
+            const httpsUrl = data.deezer_preview_url.replace(/^http:\/\//i, 'https://');
+            const safeUrl = httpsUrl.replace(/"/g, '&quot;');
+            const safeName = (t.name || '').replace(/"/g, '&quot;');
+            const safeArtist = (t.artist || '').replace(/"/g, '&quot;');
+            const safeArt = (data.deezer_album_art || '').replace(/"/g, '&quot;');
+            overlayHtml = `<button class="art-play-overlay" data-preview-url="${safeUrl}" data-row="${t.row}" data-track-name="${safeName}" data-artist-name="${safeArtist}" data-album-art="${safeArt}" onclick="event.stopPropagation();handlePreviewClick(this)" title="Play 30s preview">${SVG_ICONS.play}</button>`;
+        }
+        return `<img src="${data.deezer_album_art}" alt="album art" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">${overlayHtml}`;
+    }
+    return '🎵';
+}
+
+function getInitialListenRowHtml(t) {
+    if (!t) return '';
+    const key = getTrackKey(t.name, t.artist);
+    const data = t.deezer_link ? t : (enrichCache[key] || t);
+    const btns = [];
+    if (data.deezer_link) {
+        btns.push(`<a class="listen-btn deezer-btn" href="${data.deezer_link}" target="_blank" onclick="event.stopPropagation();" title="Open on Deezer">${SVG_ICONS.deezer} <span>Deezer</span></a>`);
+    }
+    const ytUrl = data.youtube_music_url || (t.artist && t.name ? `https://music.youtube.com/search?q=${encodeURIComponent(t.artist + ' ' + t.name)}` : '');
+    if (ytUrl) {
+        btns.push(`<a class="listen-btn yt-btn" href="${ytUrl}" target="_blank" onclick="event.stopPropagation();" title="Search on YouTube Music">${SVG_ICONS.youtube} <span>YT Music</span></a>`);
+    }
+    return btns.join('');
+}
+
 /**
  * Apply enrichment data to all matching DOM elements (art boxes + listen rows).
  */
@@ -1258,7 +1292,7 @@ async function _flushEnrichQueue() {
         const res = await fetch(`${API_BASE}/api/batch_enrich`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(toFetch.map(t => ({ name: t.name, artist: t.artist, row: t.row })))
+            body: JSON.stringify({ tracks: toFetch.map(t => ({ name: t.name, artist: t.artist, row: t.row })) })
         });
         const data = await res.json();
         const enriched = data.tracks || [];
@@ -1296,8 +1330,8 @@ function queueTrackEnrichment(trackName, artistName, row, trackObj) {
     if (trackObj) seedEnrichCache(trackObj);
     const key = getTrackKey(trackName, artistName);
     if (enrichCache[key]) {
-        // Already cached — apply immediately
-        _applyEnrichmentToDOM(key, enrichCache[key], trackName, artistName, row);
+        // Already cached — apply on next tick after DOM elements are inserted into document
+        setTimeout(() => _applyEnrichmentToDOM(key, enrichCache[key], trackName, artistName, row), 0);
         return;
     }
     if (_pendingEnrich.has(key)) return; // already in-flight
