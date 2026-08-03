@@ -47,11 +47,13 @@
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                         <circle cx="12" cy="7" r="4"></circle>
                     </svg>
-                    <select id="userSelect" class="user-dropdown" title="Select taste profile"></select>
-                    <form id="newUserForm" class="new-user-form hidden">
-                        <input id="newUserInput" placeholder="New name" autocomplete="off">
-                        <button type="submit" class="btn-add-user">Save</button>
-                    </form>
+                    <span id="currentUserDisplay" class="current-user-display">Loading...</span>
+                    <button id="logoutBtn" class="btn-icon" title="Change User / Logout">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    </button>
+                    <button id="deleteUserBtn" class="btn-icon btn-delete hidden" title="Delete Profile">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
                 </div>
             </div>
         </header>
@@ -320,7 +322,19 @@
 
     <!-- Toast notification overlay -->
     <div id="toastContainer" class="toast-container"></div>
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal-overlay hidden">
+        <div class="modal-content login-modal">
+            <h2>Welcome to SoundVector</h2>
+            <p>Enter your profile name to continue.</p>
+            <form id="loginForm" class="login-form">
+                <input type="text" id="loginInput" placeholder="Username" required autocomplete="off">
+                <button type="submit" class="btn-primary">Enter</button>
+            </form>
+        </div>
+    </div>
 
+    <!-- Scripts -->
     <script src="script.js"></script>
 </body>
 

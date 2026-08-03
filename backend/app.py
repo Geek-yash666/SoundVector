@@ -1072,7 +1072,8 @@ SHORT_TERM_DECAY = 0.6
 class ProfileStore:
     def __init__(self, engine: RecommendationEngine, profiles_dir: str = "profiles"):
         self.engine = engine
-        self.dir = profiles_dir
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.dir = os.path.normpath(os.path.join(script_dir, "..", profiles_dir))
         os.makedirs(self.dir, exist_ok=True)
         self.dim = engine.embed_dim
 
@@ -1103,6 +1104,14 @@ class ProfileStore:
         to_save["short_term"] = None
         with open(self._path(user), "w") as f:
             json.dump(to_save, f)
+
+    def delete_user(self, user: str):
+        path = self._path(user)
+        events_path = self._events_path(user)
+        if os.path.exists(path):
+            os.remove(path)
+        if os.path.exists(events_path):
+            os.remove(events_path)
 
     def vectors(self, profile: dict) -> dict:
         return {"long_term": profile.get("long_term"), "short_term": profile.get("short_term")}
@@ -1153,12 +1162,12 @@ class ProfileStore:
 
     def list_profiles(self) -> List[str]:
         if not os.path.exists(self.dir):
-            return ["Yash", "Roop", "default"]
+            return []
         users = []
         for f in os.listdir(self.dir):
             if f.endswith(".json") and not f.endswith(".events.jsonl"):
                 users.append(f[:-5])
-        return sorted(list(set(users + ["Yash", "Roop", "default"])))
+        return sorted(list(set(users)))
 
 
 # -----------------------------------------------------------------------------
@@ -1935,6 +1944,13 @@ async def get_script():
 async def api_users():
     engine, mood_model, dj, checker, store = get_app_components()
     return store.list_profiles()
+
+
+@app.delete("/api/users/{username}")
+async def api_delete_user(username: str):
+    engine, mood_model, dj, checker, store = get_app_components()
+    store.delete_user(username)
+    return {"status": "success", "user": username}
 
 
 @app.get("/api/search")

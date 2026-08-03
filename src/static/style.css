@@ -2730,3 +2730,63 @@ body {
     font-size: 14px;
     color: var(--text-secondary);
 }
+
+/* ============================================
+   AUTH & USER STYLES
+   ============================================ */
+.current-user-display {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: rgba(255,255,255,0.05);
+    padding: 6px 12px;
+    border-radius: 20px;
+    margin-right: 8px;
+}
+
+.btn-delete {
+    color: var(--text-secondary);
+}
+
+.btn-delete:hover {
+    color: #f87171;
+    background: rgba(248,113,113,0.1);
+}
+
+.login-modal {
+    text-align: center;
+    padding: 30px;
+    max-width: 400px;
+}
+
+.login-modal h2 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.login-modal p {
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.login-form input {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.login-form input:focus {
+    border-color: var(--accent);
+    background: rgba(255,255,255,0.08);
+}

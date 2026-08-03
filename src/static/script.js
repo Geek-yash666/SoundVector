@@ -2,8 +2,7 @@ let API_BASE = "";
 
 let currentMode = 'similar';
 let currentSearchType = 'track';
-let currentUser = 'Yash';
-let userList = ['Yash', 'Roop', 'default'];
+let currentUser = '';
 let searchTimeout = null;
 let profileDataCache = [];
 let currentRecData = null;
@@ -133,58 +132,80 @@ function switchTab(tabId) {
 // ---------------------------------------------------------
 // User Profile
 // ---------------------------------------------------------
-const userSelect = document.getElementById('userSelect');
-const newUserForm = document.getElementById('newUserForm');
-const newUserInput = document.getElementById('newUserInput');
+const currentUserDisplay = document.getElementById('currentUserDisplay');
+const logoutBtn = document.getElementById('logoutBtn');
+const deleteUserBtn = document.getElementById('deleteUserBtn');
+const loginModal = document.getElementById('loginModal');
+const loginForm = document.getElementById('loginForm');
+const loginInput = document.getElementById('loginInput');
+
+
+function checkAuth() {
+    const storedUser = localStorage.getItem('soundvector_user');
+    if (!storedUser) {
+        if (loginModal) loginModal.classList.remove('hidden');
+        if (loginInput) loginInput.focus();
+    } else {
+        currentUser = storedUser;
+        if (loginModal) loginModal.classList.add('hidden');
+        onUserChanged();
+    }
+}
 
 async function loadUsers() {
-    try {
-        const res = await fetch(`${API_BASE}/api/users`);
-        if (res.ok) userList = await res.json();
-    } catch (err) {
-        console.error("Could not load users list", err);
-    }
-    if (!userList.includes(currentUser)) userList.push(currentUser);
-    renderUserSelect();
+    checkAuth();
 }
 
-function renderUserSelect() {
-    if (!userSelect) return;
-    userSelect.innerHTML = userList.map(u =>
-        `<option value="${u}" ${u === currentUser ? 'selected' : ''}>${u}</option>`
-    ).join('') + '<option value="__new__">+ Add User…</option>';
-}
-
-if (userSelect) {
-    userSelect.addEventListener('change', () => {
-        if (userSelect.value === '__new__') {
-            newUserForm.classList.remove('hidden');
-            newUserInput.focus();
-            userSelect.value = currentUser;
-            return;
-        }
-        currentUser = userSelect.value;
-        onUserChanged();
+if (loginForm) {
+    loginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = loginInput.value.trim();
+        if (!name) return;
+        localStorage.setItem('soundvector_user', name);
+        checkAuth();
     });
 }
 
-if (newUserForm) {
-    newUserForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const name = newUserInput.value.trim();
-        if (!name) return;
-        currentUser = name;
-        if (!userList.includes(name)) userList.push(name);
-        renderUserSelect();
-        newUserForm.classList.add('hidden');
-        newUserInput.value = '';
-        onUserChanged();
+if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+        localStorage.removeItem('soundvector_user');
+        checkAuth();
+    });
+}
+
+if (deleteUserBtn) {
+    deleteUserBtn.addEventListener('click', async () => {
+
+        if (!confirm(`Are you sure you want to completely delete the profile for '${currentUser}'? This cannot be undone.`)) {
+            return;
+        }
+        try {
+            const res = await fetch(`${API_BASE}/api/users/${encodeURIComponent(currentUser)}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast("Profile deleted successfully.");
+                localStorage.removeItem('soundvector_user');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                const data = await res.json();
+                showToast(data.detail || "Failed to delete profile.", "error");
+            }
+        } catch(e) {
+            console.error(e);
+            showToast("Network error deleting profile.", "error");
+        }
     });
 }
 
 function onUserChanged() {
-    document.getElementById('profileCardUser').innerText = currentUser;
-    showToast(`Switched to profile '${currentUser}'`);
+    if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
+    const profileCardUser = document.getElementById('profileCardUser');
+    if (profileCardUser) profileCardUser.innerText = currentUser;
+    
+    if (deleteUserBtn) {
+        deleteUserBtn.classList.remove('hidden');
+    }
+    
+    showToast(`Logged in as '${currentUser}'`);
     refreshProfileStats();
     // Reload home page with new profile
     if (currentView === 'home') loadHomePage();
