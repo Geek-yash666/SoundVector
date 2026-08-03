@@ -165,9 +165,19 @@ function toggleRightSidebar() {
 }
 
 function openMobileInsights() {
+    const trackNameEl = document.getElementById('playerTrackName');
+    const artistNameEl = document.getElementById('playerArtistName');
+    
+    if (currentPlayingRow !== null && trackNameEl && trackNameEl.innerText && trackNameEl.innerText !== 'Audio Preview') {
+        openTrackIntel(currentPlayingRow, trackNameEl.innerText, artistNameEl ? artistNameEl.innerText : '');
+        return;
+    }
+
     const modal = document.getElementById('mobileInsightsModal');
     const body = document.getElementById('mobileInsightsBody');
     if (!modal || !body) return;
+    const sheetTitle = modal.querySelector('.sheet-header h3');
+    if (sheetTitle) sheetTitle.textContent = 'Track Insights & Taste';
 
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     const navIM = document.getElementById('navIntelMobile');
@@ -192,6 +202,7 @@ function openMobileInsights() {
             const pClone = p.cloneNode(true);
             pClone.id = p.id ? p.id + '_mobile' : 'dj_panel_mobile_' + idx;
             pClone.style.marginBottom = '16px';
+            pClone.classList.remove('hidden');
             body.appendChild(pClone);
         });
     }
@@ -1138,10 +1149,32 @@ function togglePreview(url, row, btn, trackName, artistName, coverArt) {
     currentAudio.preload = 'none';
     currentAudio.crossOrigin = 'anonymous';
     // Force HTTPS for mobile browser compatibility
-    currentAudio.src = url.replace(/^http:\/\//i, 'https://');
+    const initialSrc = url.replace(/^http:\/\//i, 'https://');
+    currentAudio.src = initialSrc;
     currentPlayingUrl = url;
     currentPlayingRow = row;
     currentAudio.volume = 0.8;
+
+    // Handle 403 / Expired link errors gracefully via live iTunes search fallback
+    currentAudio.onerror = async () => {
+        console.warn("Audio preview returned 403 / playback error. Fetching fresh iTunes preview link...");
+        try {
+            const q = `${trackName || ''} ${artistName || ''}`.strip ? `${trackName || ''} ${artistName || ''}`.trim() : (trackName || '');
+            if (q) {
+                const fRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=1`);
+                const fData = await fRes.json();
+                if (fData.results && fData.results[0] && fData.results[0].previewUrl) {
+                    const freshUrl = fData.results[0].previewUrl;
+                    if (currentAudio) {
+                        currentAudio.src = freshUrl;
+                        currentAudio.play().then(() => {
+                            if (bar) updatePlayerBarState(true);
+                        }).catch(e => console.error("Fallback play failed:", e));
+                    }
+                }
+            }
+        } catch (e) { console.error("Audio fallback error:", e); }
+    };
 
     currentAudio.play().then(() => {
         if (bar) {

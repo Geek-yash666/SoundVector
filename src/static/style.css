@@ -3233,26 +3233,30 @@ body.has-player-bar .dj-sidebar {
     }
 
     /* Mobile Insights Bottom Sheet */
-    .mobile-insights-sheet {
-        display: flex;
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        width: 100%;
-        max-width: 100%;
-        max-height: 85vh;
-        background: #141414;
-        border-top-left-radius: 24px;
-        border-top-right-radius: 24px;
-        border: 1px solid var(--glass-border);
-        border-bottom: none;
-        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
-        flex-direction: column;
-        padding: 16px 20px 30px;
-        animation: sheetSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        overflow-y: auto;
-        z-index: 1001;
+    .modal-box.mobile-insights-sheet {
+        display: flex !important;
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: 85vh !important;
+        background: #141414 !important;
+        border-top-left-radius: 24px !important;
+        border-top-right-radius: 24px !important;
+        border-bottom-left-radius: 0 !important;
+        border-bottom-right-radius: 0 !important;
+        border: 1px solid var(--glass-border) !important;
+        border-bottom: none !important;
+        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8) !important;
+        flex-direction: column !important;
+        padding: 16px 20px 30px !important;
+        animation: sheetSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        overflow-y: auto !important;
+        z-index: 1001 !important;
+        margin: 0 !important;
+        transform: none !important;
     }
 
     @keyframes sheetSlideUp {

@@ -1545,26 +1545,23 @@ def enrich_track(track_name: str, artist_name: str, lastfm_key: Optional[str] = 
         pass
 
     try:
-        # ---- iTunes Search API Fallback (Guarantees cover art + 30s preview) ----
-        if not result.get("deezer_preview_url") or not result.get("deezer_album_art"):
-            it_q = urllib.parse.quote(f"{primary_artist} {clean_track}")
+        # ---- iTunes Search API (Guarantees permanent non-expiring 30s preview + cover art) ----
+        it_q = urllib.parse.quote(f"{primary_artist} {clean_track}")
+        it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=5")
+        if not (it_data and it_data.get("results")):
+            it_q = urllib.parse.quote(clean_track)
             it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=5")
-            if not (it_data and it_data.get("results")):
-                it_q = urllib.parse.quote(clean_track)
-                it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=5")
-            if it_data and it_data.get("results"):
-                it_hit = it_data["results"][0]
-                for h in it_data["results"]:
-                    if h.get("previewUrl"):
-                        it_hit = h
-                        break
-                if not result.get("deezer_preview_url"):
-                    result["deezer_preview_url"] = it_hit.get("previewUrl") or ""
-                if not result.get("deezer_album_art"):
-                    art = it_hit.get("artworkUrl100") or ""
-                    result["deezer_album_art"] = art.replace("100x100bb", "300x300bb")
-                if not result.get("deezer_link"):
-                    result["deezer_link"] = it_hit.get("trackViewUrl") or ""
+        if it_data and it_data.get("results"):
+            for h in it_data["results"]:
+                if h.get("previewUrl"):
+                    # Use iTunes previewUrl as it never expires with Akamai tokens
+                    result["deezer_preview_url"] = h["previewUrl"]
+                    break
+            if not result.get("deezer_album_art"):
+                art = it_data["results"][0].get("artworkUrl100") or ""
+                result["deezer_album_art"] = art.replace("100x100bb", "300x300bb")
+            if not result.get("deezer_link"):
+                result["deezer_link"] = it_data["results"][0].get("trackViewUrl") or ""
     except Exception:
         pass
 
