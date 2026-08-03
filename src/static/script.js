@@ -173,23 +173,32 @@ function openMobileInsights() {
     const navIM = document.getElementById('navIntelMobile');
     if (navIM) navIM.classList.add('active');
 
-    const profileBox = document.querySelector('.profile-box');
-    const djSidebar = document.querySelector('.dj-sidebar');
+    const pBox = document.getElementById('profileBox');
+    const djPanel = document.getElementById('djIntelPanel');
+    const aPanel = document.getElementById('audioVectorPanel');
 
     body.innerHTML = '';
-    if (profileBox) {
-        const profileClone = profileBox.cloneNode(true);
-        profileClone.style.marginBottom = '16px';
-        body.appendChild(profileClone);
+    
+    if (pBox) {
+        const pClone = pBox.cloneNode(true);
+        pClone.id = pClone.id + '_mobile';
+        pClone.style.marginBottom = '16px';
+        pClone.classList.remove('hidden');
+        body.appendChild(pClone);
     }
-    if (djSidebar) {
-        const djClone = djSidebar.cloneNode(true);
-        djClone.style.display = 'flex';
-        djClone.style.flexDirection = 'column';
-        djClone.style.gap = '16px';
-        const hiddenPanels = djClone.querySelectorAll('.hidden');
-        hiddenPanels.forEach(hp => hp.classList.remove('hidden'));
+    if (djPanel) {
+        const djClone = djPanel.cloneNode(true);
+        djClone.id = djClone.id + '_mobile';
+        djClone.style.marginBottom = '16px';
+        djClone.classList.remove('hidden');
         body.appendChild(djClone);
+    }
+    if (aPanel) {
+        const aClone = aPanel.cloneNode(true);
+        aClone.id = aClone.id + '_mobile';
+        aClone.style.marginBottom = '16px';
+        aClone.classList.remove('hidden');
+        body.appendChild(aClone);
     }
 
     modal.classList.remove('hidden');
@@ -367,7 +376,7 @@ searchInput.addEventListener('input', (e) => {
             activeSuggestionIdx = -1;
             renderSuggestions();
         } catch (err) { hideSuggestions(); }
-    }, 180);
+    }, 400);
 });
 
 function hideSuggestions() {
@@ -407,7 +416,7 @@ function renderSuggestions() {
         albumSuggestions.forEach(alb => {
             const artHtml = alb.cover_art ? `<img src="${alb.cover_art}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;">` : '💿';
             html += `
-            <div class="dropdown-album-card" onclick="openAlbumPage('${alb.title.replace(/'/g, "\\'")}', '${(alb.artist || '').replace(/'/g, "\\'")}', '${alb.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:8px;cursor:pointer;min-width:160px;max-width:220px;border:1px solid rgba(255,255,255,0.06);flex-shrink:0;">
+            <div class="dropdown-album-card" onclick="openAlbumPage('${alb.title.replace(/'/g, "\\'")}', '${(alb.artist || '').replace(/'/g, "\\'")}', '${alb.id || ''}', '${alb.source || ''}')" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:8px;cursor:pointer;min-width:160px;max-width:220px;border:1px solid rgba(255,255,255,0.06);flex-shrink:0;">
                 <div style="width:38px;height:38px;border-radius:6px;overflow:hidden;flex-shrink:0;background:#222;display:flex;align-items:center;justify-content:center;font-size:16px;">${artHtml}</div>
                 <div style="overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;text-align:left;">
                     <span style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;">${alb.title}</span>
@@ -1662,7 +1671,7 @@ function collapseAlbum() {
 // ---------------------------------------------------------
 // Standalone Album & Movie Soundtrack Page View
 // ---------------------------------------------------------
-async function openAlbumPage(albumTitle, artistName = '', albumId = '') {
+async function openAlbumPage(albumTitle, artistName = '', albumId = '', source = '') {
     currentArtistName = artistName;
     hideSuggestions();
     switchTab('album');
@@ -1673,7 +1682,7 @@ async function openAlbumPage(albumTitle, artistName = '', albumId = '') {
     document.getElementById('albumTracksList').innerHTML = `<div class="loading-state"><div class="spinner"></div><div>Loading tracks for "${albumTitle}"...</div></div>`;
 
     try {
-        const res = await fetch(`${API_BASE}/api/album_tracks?title=${encodeURIComponent(albumTitle)}&artist=${encodeURIComponent(artistName)}&id=${encodeURIComponent(albumId)}`);
+        const res = await fetch(`${API_BASE}/api/album_tracks?title=${encodeURIComponent(albumTitle)}&artist=${encodeURIComponent(artistName)}&id=${encodeURIComponent(albumId)}&source=${encodeURIComponent(source)}`);
         const data = await res.json();
 
         document.getElementById('albumTitle').innerText = data.title || albumTitle;

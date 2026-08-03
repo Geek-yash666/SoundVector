@@ -29,6 +29,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections import Counter
+import asyncio
 from typing import Dict, List, Optional, Tuple, Set
 from urllib.parse import parse_qs, urlparse
 
@@ -1424,15 +1425,7 @@ def _raw_run_pipeline(query: str, engine: RecommendationEngine, mood_model: Mood
     return run_pipeline(query, engine, mood_model, dj, checker, profile, store, mode=mode, k=k, search_type=search_type, seed_track=seed_track)
 
 
-if HAS_SPACES and GPU_USAGE:
-    @spaces.GPU
-    def _gpu_run_pipeline(query: str, engine: RecommendationEngine, mood_model: MoodToVector,
-                         dj: RAGDJ, checker: GroundednessChecker, profile: dict, store: ProfileStore,
-                         mode: str = "similar", k: int = 10, search_type: str = "auto",
-                         seed_track: Optional[dict] = None):
-        return _raw_run_pipeline(query, engine, mood_model, dj, checker, profile, store, mode=mode, k=k, search_type=search_type, seed_track=seed_track)
-else:
-    _gpu_run_pipeline = _raw_run_pipeline
+_gpu_run_pipeline = _raw_run_pipeline
 
 
 def safe_run_pipeline(query: str, engine: RecommendationEngine, mood_model: MoodToVector,
@@ -1528,13 +1521,17 @@ def enrich_track(track_name: str, artist_name: str, lastfm_key: Optional[str] = 
     try:
         # ---- Deezer Search API ----
         deezer_q = urllib.parse.quote(f"{primary_artist} {clean_track}")
-        deezer_data = _fetch_json(f"https://api.deezer.com/search?q={deezer_q}&limit=1&output=json")
+        deezer_data = _fetch_json(f"https://api.deezer.com/search?q={deezer_q}&limit=5&output=json")
         if not (deezer_data and deezer_data.get("data")):
             deezer_q = urllib.parse.quote(clean_track)
-            deezer_data = _fetch_json(f"https://api.deezer.com/search?q={deezer_q}&limit=1&output=json")
+            deezer_data = _fetch_json(f"https://api.deezer.com/search?q={deezer_q}&limit=5&output=json")
 
         if deezer_data and deezer_data.get("data"):
             hit = deezer_data["data"][0]
+            for h in deezer_data["data"]:
+                if h.get("preview"):
+                    hit = h
+                    break
             result["deezer_preview_url"] = hit.get("preview") or ""
             result["deezer_link"] = hit.get("link") or ""
             result["deezer_album_art"] = (hit.get("album") or {}).get("cover_medium") or ""
@@ -1547,12 +1544,16 @@ def enrich_track(track_name: str, artist_name: str, lastfm_key: Optional[str] = 
         # ---- iTunes Search API Fallback (Guarantees cover art + 30s preview) ----
         if not result.get("deezer_preview_url") or not result.get("deezer_album_art"):
             it_q = urllib.parse.quote(f"{primary_artist} {clean_track}")
-            it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=1")
+            it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=5")
             if not (it_data and it_data.get("results")):
                 it_q = urllib.parse.quote(clean_track)
-                it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=1")
+                it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=5")
             if it_data and it_data.get("results"):
                 it_hit = it_data["results"][0]
+                for h in it_data["results"]:
+                    if h.get("previewUrl"):
+                        it_hit = h
+                        break
                 if not result.get("deezer_preview_url"):
                     result["deezer_preview_url"] = it_hit.get("previewUrl") or ""
                 if not result.get("deezer_album_art"):
@@ -1730,23 +1731,16 @@ def search_live_albums(query: str, limit: int = 4) -> List[dict]:
     return albums[:limit]
 
 
-def fetch_album_tracks(album_title: str, artist_name: str = "", album_id: str = "", engine = None) -> dict:
+def fetch_album_tracks(album_title: str, artist_name: str = "", album_id: str = "", source: str = "", engine = None) -> dict:
     """Fetch all tracks for a specific album/movie soundtrack."""
     tracks = []
     cover_art = ""
     artist = artist_name or "Various Artists"
 
-    # 1. Search local dataset first for matching album or movie name
-    if engine and hasattr(engine, 'df') and 'album' in engine.df.columns:
-        df = engine.df
-        q_clean = album_title.lower().strip()
-        matching = df[df['album'].str.lower().str.contains(q_clean, na=False, regex=False)]
-        if not matching.empty:
-            for idx, r in matching.head(30).iterrows():
-                tracks.append(engine.track_card(idx))
-
+    # 1. Search local dataset (album column doesn't exist, we rely on live lookup for exact album tracks unless mapped)
+    
     # 2. If dataset has few/no tracks, fetch from Deezer/iTunes Live Album Lookup!
-    if len(tracks) < 2 and album_id:
+    if len(tracks) < 2 and album_id and (source == "deezer" or not source):
         try:
             d_data = _fetch_json(f"https://api.deezer.com/album/{album_id}")
             if d_data:
@@ -1780,15 +1774,21 @@ def fetch_album_tracks(album_title: str, artist_name: str = "", album_id: str = 
     # 3. iTunes Album Lookup fallback
     if len(tracks) < 2:
         try:
-            it_q = urllib.parse.quote(f"{album_title} {artist_name}".strip())
-            it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=25")
+            if source == "itunes" and album_id:
+                it_data = _fetch_json(f"https://itunes.apple.com/lookup?id={album_id}&entity=song")
+            else:
+                it_q = urllib.parse.quote(f"{album_title} {artist_name}".strip())
+                it_data = _fetch_json(f"https://itunes.apple.com/search?term={it_q}&entity=song&limit=25")
+            
             if it_data and it_data.get("results"):
                 for tr in it_data["results"]:
+                    tname = tr.get("trackName", "")
+                    if not tname:
+                        continue
                     col_name = (tr.get("collectionName") or "").lower()
-                    if album_title.lower() in col_name or not cover_art:
+                    if source == "itunes" or album_title.lower() in col_name or not cover_art:
                         if not cover_art:
                             cover_art = (tr.get("artworkUrl100") or "").replace("100x100bb", "300x300bb")
-                        tname = tr.get("trackName", "")
                         tar = tr.get("artistName", "")
                         yt_q = urllib.parse.quote(f"{tar} {tname}")
                         tracks.append({
@@ -1981,11 +1981,16 @@ async def api_search(q: str = ""):
     engine, mood_model, dj, checker, store = get_app_components()
     results = engine.search(q, limit=8)
     matching_artists = engine.match_artist(q, limit=4)
-    matching_albums = search_live_albums(q, limit=4)
+    
+    matching_albums = []
     
     if q and len(q.strip()) >= 2:
+        loop = asyncio.get_event_loop()
         try:
-            live_hits = search_live_apis(q, limit=3)
+            live_hits, matching_albums = await asyncio.gather(
+                loop.run_in_executor(None, search_live_apis, q, 3),
+                loop.run_in_executor(None, search_live_albums, q, 4)
+            )
             if live_hits:
                 existing_keys = {f"{(r.get('name') or '').lower().strip()}||{(r.get('artist') or '').lower().strip()}" for r in results}
                 for hit in reversed(live_hits):
@@ -1994,7 +1999,7 @@ async def api_search(q: str = ""):
                         results.insert(0, hit)
                         existing_keys.add(hk)
         except Exception:
-            pass
+            matching_albums = []
 
     return {
         "results": results[:8],
@@ -2004,9 +2009,9 @@ async def api_search(q: str = ""):
 
 
 @app.get("/api/album_tracks")
-async def api_album_tracks(title: str = "", artist: str = "", id: str = ""):
+async def api_album_tracks(title: str = "", artist: str = "", id: str = "", source: str = ""):
     engine, mood_model, dj, checker, store = get_app_components()
-    data = fetch_album_tracks(title, artist_name=artist, album_id=id, engine=engine)
+    data = fetch_album_tracks(title, artist_name=artist, album_id=id, source=source, engine=engine)
     return data
 
 
