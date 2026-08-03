@@ -47,7 +47,7 @@
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                         <circle cx="12" cy="7" r="4"></circle>
                     </svg>
-                    <span id="currentUserDisplay" class="current-user-display">Loading...</span>
+                    <span id="currentUserDisplay" class="current-user-display">Guest</span>
                     <button id="logoutBtn" class="btn-icon" title="Change User / Logout">
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                     </button>
@@ -323,13 +323,15 @@
     <!-- Toast notification overlay -->
     <div id="toastContainer" class="toast-container"></div>
     <!-- Login Modal -->
-    <div id="loginModal" class="modal-overlay hidden">
-        <div class="modal-content login-modal">
-            <h2>Welcome to SoundVector</h2>
-            <p>Enter your profile name to continue.</p>
-            <form id="loginForm" class="login-form">
-                <input type="text" id="loginInput" placeholder="Username" required autocomplete="off">
-                <button type="submit" class="btn-primary">Enter</button>
+    <div id="loginModal" class="modal-overlay">
+        <div class="modal-box login-modal" style="padding: 32px; text-align: center; max-width: 420px; border-radius: 20px;">
+            <div class="modal-header" style="justify-content: center; border: none; padding: 0 0 10px 0;">
+                <h2 style="font-size: 22px; font-weight: 700; margin: 0; color: #ffffff;">Welcome to SoundVector</h2>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 14px; margin: 0 0 24px 0;">Enter your name to personalize your music recommendations.</p>
+            <form id="loginForm" style="display: flex; flex-direction: column; gap: 16px;">
+                <input type="text" id="loginInput" placeholder="Your name (e.g. Alex)" required autocomplete="off" style="background: rgba(255,255,255,0.06); border: 1px solid var(--glass-border); color: #ffffff; padding: 14px 18px; border-radius: 12px; font-size: 16px; outline: none; text-align: center; width: 100%; box-sizing: border-box;">
+                <button type="submit" class="btn-primary" style="padding: 14px; font-size: 15px; font-weight: 600; border-radius: 12px; cursor: pointer; width: 100%;">Start Listening 🎵</button>
             </form>
         </div>
     </div>

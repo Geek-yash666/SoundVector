@@ -2,7 +2,7 @@ let API_BASE = "";
 
 let currentMode = 'similar';
 let currentSearchType = 'track';
-let currentUser = '';
+let currentUser = 'Guest';
 let searchTimeout = null;
 let profileDataCache = [];
 let currentRecData = null;
@@ -143,11 +143,15 @@ const loginInput = document.getElementById('loginInput');
 function checkAuth() {
     const storedUser = localStorage.getItem('soundvector_user');
     if (!storedUser) {
-        if (loginModal) loginModal.classList.remove('hidden');
-        if (loginInput) loginInput.focus();
+        currentUser = 'Guest';
+        if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
+        const profileCardUser = document.getElementById('profileCardUser');
+        if (profileCardUser) profileCardUser.innerText = currentUser;
+        if (loginModal) loginModal.classList.add('open');
+        setTimeout(() => { if (loginInput) loginInput.focus(); }, 100);
     } else {
         currentUser = storedUser;
-        if (loginModal) loginModal.classList.add('hidden');
+        if (loginModal) loginModal.classList.remove('open');
         onUserChanged();
     }
 }
@@ -162,6 +166,7 @@ if (loginForm) {
         const name = loginInput.value.trim();
         if (!name) return;
         localStorage.setItem('soundvector_user', name);
+        if (loginModal) loginModal.classList.remove('open');
         checkAuth();
     });
 }
@@ -169,6 +174,7 @@ if (loginForm) {
 if (logoutBtn) {
     logoutBtn.addEventListener('click', () => {
         localStorage.removeItem('soundvector_user');
+        if (loginInput) loginInput.value = '';
         checkAuth();
     });
 }
