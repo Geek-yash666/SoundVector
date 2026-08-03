@@ -1,0 +1,136 @@
+{
+  "ts": 1785621919.398279,
+  "votes": {
+    "new": 3,
+    "old": 1,
+    "tie": 3
+  },
+  "rounds": [
+    {
+      "seed": "Dynamite \u2014 BTS",
+      "vote": "new",
+      "new_list": [
+        "Boy With Luv (feat. Halsey) \u2014 BTS",
+        "Outro : Ego \u2014 BTS",
+        "S-Class \u2014 Stray Kids",
+        "Stitches \u2014 Shawn Mendes",
+        "Don't Go Yet \u2014 Camila Cabello"
+      ],
+      "old_list": [
+        "Filter \u2014 BTS",
+        "CIRCUS \u2014 Stray Kids",
+        "Charmer \u2014 Stray Kids",
+        "Blue Hour \u2014 TOMORROW X TOGETHER",
+        "God of Music \u2014 SEVENTEEN"
+      ]
+    },
+    {
+      "seed": "Circles \u2014 Post Malone",
+      "vote": "new",
+      "new_list": [
+        "I Like You (A Happier Song) (with Doja Cat) \u2014 Post Malone",
+        "Take What You Want (feat. Ozzy Osbourne & Travis Scott) \u2014 Post Malone",
+        "Flowers \u2014 Miley Cyrus",
+        "IDK You Yet \u2014 Alexander 23",
+        "One Dance \u2014 Drake"
+      ],
+      "old_list": [
+        "Circles \u2014 Post Malone",
+        "Mr. Rager \u2014 Kid Cudi",
+        "The Way I Are \u2014 Timbaland",
+        "Saturn - Instrumental \u2014 SZA",
+        "Link Up (Metro Boomin & Don Toliver, Wizkid feat. BEAM & Toian) - Spider-Verse Remix (Spider-Man: Across the Spider-Verse ) \u2014 Metro Boomin"
+      ]
+    },
+    {
+      "seed": "Gimme More \u2014 Britney Spears",
+      "vote": "tie",
+      "new_list": [
+        "Womanizer \u2014 Britney Spears",
+        "Toxic \u2014 Britney Spears",
+        "Mirrors \u2014 Justin Timberlake",
+        "Rock Your Body \u2014 Justin Timberlake",
+        "Just Give Me a Reason (feat. Nate Ruess) \u2014 P!nk"
+      ],
+      "old_list": [
+        "Womanizer \u2014 Britney Spears",
+        "Agora Hills \u2014 Doja Cat",
+        "Just the Way You Are \u2014 Bruno Mars",
+        "Marry You \u2014 Bruno Mars",
+        "Like a Prayer \u2014 Madonna"
+      ]
+    },
+    {
+      "seed": "Peaches (feat. Daniel Caesar & Giveon) \u2014 Justin Bieber",
+      "vote": "old",
+      "new_list": [
+        "Sorry \u2014 Justin Bieber",
+        "Ghost \u2014 Justin Bieber",
+        "we can't be friends (wait for your love) \u2014 Ariana Grande",
+        "the boy is mine \u2014 Ariana Grande",
+        "Payphone \u2014 Maroon 5"
+      ],
+      "old_list": [
+        "Sorry \u2014 Justin Bieber",
+        "Die For You (with Ariana Grande) - Remix \u2014 The Weeknd",
+        "Best Friends \u2014 The Weeknd",
+        "Death By A Thousand Cuts \u2014 Taylor Swift",
+        "Watermelon Sugar \u2014 Harry Styles"
+      ]
+    },
+    {
+      "seed": "a thousand years \u2014 Christina Perri",
+      "vote": "tie",
+      "new_list": [
+        "human \u2014 Christina Perri",
+        "A Thousand Years (feat. Steve Kazee) - Pt. 2; The Twilight Saga: Breaking Dawn Soundtrack \u2014 Christina Perri",
+        "What A Time (feat. Niall Horan) \u2014 Julia Michaels",
+        "Issues \u2014 Julia Michaels",
+        "Make You Mine \u2014 Madison Beer"
+      ],
+      "old_list": [
+        "human \u2014 Christina Perri",
+        "making the bed \u2014 Olivia Rodrigo",
+        "This Love (Taylor\u2019s Version) \u2014 Taylor Swift",
+        "pov \u2014 Ariana Grande",
+        "Don\u2019t Blame Me \u2014 Taylor Swift"
+      ]
+    },
+    {
+      "seed": "One Kiss (with Dua Lipa) \u2014 Calvin Harris",
+      "vote": "tie",
+      "new_list": [
+        "My Way \u2014 Calvin Harris",
+        "Miracle (with Ellie Goulding) \u2014 Calvin Harris",
+        "When We Were Young (The Logical Song) \u2014 David Guetta",
+        "Memories (feat. Kid Cudi) - 2021 Remix \u2014 David Guetta",
+        "We Don't Talk Anymore (feat. Selena Gomez) \u2014 Charlie Puth"
+      ],
+      "old_list": [
+        "My Way \u2014 Calvin Harris",
+        "Ocean Drive \u2014 Duke Dumont",
+        "Whistle (feat. Calum Scott) \u2014 Jax Jones",
+        "When We Were Young (The Logical Song) \u2014 David Guetta",
+        "Me and My Guitar \u2014 Jax Jones"
+      ]
+    },
+    {
+      "seed": "GIRL LIKE ME \u2014 Black Eyed Peas",
+      "vote": "new",
+      "new_list": [
+        "Meet Me Halfway \u2014 Black Eyed Peas",
+        "Where Is The Love? \u2014 Black Eyed Peas",
+        "If We Ever Meet Again (Featuring Katy Perry) \u2014 Timbaland",
+        "Dynamite \u2014 Taio Cruz",
+        "Party Rock Anthem \u2014 LMFAO"
+      ],
+      "old_list": [
+        "Meet Me Halfway \u2014 Black Eyed Peas",
+        "Low (feat. T-Pain) \u2014 Flo Rida",
+        "If We Ever Meet Again (Featuring Katy Perry) \u2014 Timbaland",
+        "Party Rock Anthem \u2014 LMFAO",
+        "Apologize \u2014 Timbaland"
+      ]
+    }
+  ]
+}

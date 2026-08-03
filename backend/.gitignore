@@ -1,0 +1,15 @@
+__pycache__
+*.env
+*.pyc
+.DS_Store
+.agent/
+.vscode/
+.pytest_cache/
+
+# Ignore everything in data/ except tracks.parquet
+data/*
+!data/tracks.parquet
+artifacts/
+profiles/
+
+future.md

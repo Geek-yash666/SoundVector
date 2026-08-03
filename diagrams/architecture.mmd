@@ -1,0 +1,58 @@
+%% SoundVector — system architecture (input -> process -> output, with HITL)
+flowchart TB
+    subgraph Input
+        U["User query"]
+        Q1["Song / artist name"]
+        Q2["Natural-language mood<br/>(sad rainy night)"]
+        U --> Q1
+        U --> Q2
+    end
+
+    subgraph Offline["Offline training (GPU / Colab B200)"]
+        DP["data_prep.py<br/>899K tracks -> features +<br/>genre multi-hot + pair groups"]
+        TR["train_embeddings.py<br/>contrastive MLP encoder<br/>InfoNCE, 256-d"]
+        MV["mood_to_vector.py<br/>TF-IDF + Ridge<br/>text -> 256-d + 8D audio"]
+        DP --> TR
+        DP --> MV
+        TR --> EMB[("embeddings.npy<br/>899K x 256")]
+        EMB --> IDX[("HNSW index<br/>build_index.py")]
+    end
+
+    subgraph Stage1["1 - Retrieval"]
+        MV -. mood vector .-> RET
+        Q2 --> MV
+        Q1 --> SRCH["tiered search +<br/>fuzzy artist match"]
+        SRCH -- seed embedding --> RET["ANN query (hnswlib)<br/>899K -> ~2000 candidates<br/>adaptive pool"]
+        IDX --> RET
+    end
+
+    subgraph Stage2["2 - Ranking"]
+        RET --> RANK["multi-signal score<br/>embed + audio + genre +<br/>artist + popularity + era"]
+        RANK --> DIV["canonical dedup +<br/>artist caps + redundancy gate"]
+        DIV --> TOPK["Top-K recommendations"]
+    end
+
+    subgraph Personalize["Personalization"]
+        PROF[("profiles/&lt;user&gt;.json<br/>decayed taste vectors")]
+        PROF -. blend into query .-> RET
+        TOPK --> FB{"like / skip"}
+        FB -- updates --> PROF
+        FB -- append --> LOG[("events.jsonl")]
+    end
+
+    subgraph RAG["3 - RAG DJ + guardrail"]
+        TOPK --> CARDS["retrieved attribute cards"]
+        CARDS --> DJ["Gemini DJ commentary<br/>(rag_dj.py)"]
+        DJ --> GC{{"GroundednessChecker<br/>verify claims vs facts"}}
+        GC -- groundedness score --> OUT
+    end
+
+    TOPK --> OUT["Output:<br/>recs + explanation +<br/>DJ blurb + groundedness"]
+
+    subgraph HITL["Human-in-the-loop / testing"]
+        AB["ab_test.py<br/>blind old-vs-new voting"]
+        EV["evaluate.py + pytest<br/>recall, ILD, genre fidelity,<br/>NL assertions, groundedness"]
+    end
+    OUT -. reviewed by .-> AB
+    TOPK -. measured by .-> EV
+    FB -. human feedback .-> EV

@@ -1,0 +1,50 @@
+$ python3 src/dj.py "sad rainy night"
+🎧 "sad rainy night"
+────────────────────────────────────────────────────────────
+   1. Living Life, In The Night                    Unknown Artist           [56.5%]
+   2. Eyes Blue Like The Atlantic, Pt. 2 (feat.    Unknown Artist           [55.2%]
+   3. when it's dark out                           Unknown Artist           [54.5%]
+   4. Out Of My Mind                               Unknown Artist           [54.4%]
+   5. novocaine                                    Unknown Artist           [54.3%]
+   6. Tendencies                                   Unknown Artist           [52.8%]
+   7. time's arrow                                 Unknown Artist           [52.3%]
+   8. Are You Okay?                                Thomas Reid              [52.0%]
+
+💬 DJ (template):
+   Seeded by "sad rainy night" — a melancholy, laid-back sad lo-fi vibe (energy 0.23, valence 0.32). If that's your mood, cue up "Living Life, In The Night" and "Eyes Blue Like The Atlantic, Pt. 2 (feat. Powfu, Alec Benjamin & Rxseboy)", which sit in the same sonic lane. Press play and let it ride.
+
+✅ groundedness 100% (4/4 claims verified)
+
+$ python3 src/dj.py "gym hype workout"
+🎧 "gym hype workout"
+────────────────────────────────────────────────────────────
+   1. Faded - Tabata Mix                           Tabata Music             [56.0%]
+   2. Fist Pump Jump Jump - Fitness Version        Unknown Artist           [53.2%]
+   3. I Feel It Coming - 127 BPM                   Unknown Artist           [52.1%]
+   4. Suavemente - Workout Mix Edit 130 bpm        Unknown Artist           [51.3%]
+   5. Shape of You - 140 Bpm                       Unknown Artist           [50.2%]
+   6. Moonlight Shadow                             Unknown Artist           [50.2%]
+   7. Always On My Mind - 146 Bpm                  Unknown Artist           [49.7%]
+   8. Echame La Culpa (Fitness Version 128 Bpm /   Unknown Artist           [49.4%]
+
+💬 DJ (template):
+   Seeded by "gym hype workout" — a upbeat, high-energy workout product vibe (energy 0.93, valence 0.56). If that's your mood, cue up "Faded - Tabata Mix" by Tabata Music and "Fist Pump Jump Jump - Fitness Version", which sit in the same sonic lane. Press play and let it ride.
+
+✅ groundedness 100% (3/3 claims verified)
+
+$ python3 src/dj.py "blinding lights"
+🎧 Blinding Lights — The Weeknd
+────────────────────────────────────────────────────────────
+   1. Call Out My Name                             The Weeknd               [85.6%]
+   2. Havana (feat. Young Thug)                    Camila Cabello           [74.4%]
+   3. Scars To Your Beautiful                      Alessia Cara             [71.1%]
+   4. Dandelions                                   Ruth B.                  [63.6%]
+   5. In My Blood                                  Shawn Mendes             [60.9%]
+   6. Believe                                      Cher                     [60.0%]
+   7. Bang Bang                                    Jessie J                 [58.9%]
+   8. Still Believe in Love                        jacksoul                 [58.7%]
+
+💬 DJ (template):
+   Seeded by Blinding Lights — The Weeknd — a melancholy, high-energy pop vibe (energy 0.73, valence 0.33). If that's your mood, cue up "Call Out My Name" by The Weeknd and "Havana (feat. Young Thug)" by Camila Cabello, which sit in the same sonic lane. Press play and let it ride.
+
+✅ groundedness 100% (6/6 claims verified)

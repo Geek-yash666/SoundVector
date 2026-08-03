@@ -1,0 +1,17 @@
+pandas
+pyarrow
+numpy
+scipy
+scikit-learn
+torch
+hnswlib
+rapidfuzz
+google-genai
+pytest
+streamlit
+requests
+huggingface_hub
+fastapi
+uvicorn
+gradio
+pydantic

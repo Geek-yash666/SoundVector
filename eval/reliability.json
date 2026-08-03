@@ -1,0 +1,117 @@
+{
+  "same_artist_recall@50": 1.0,
+  "intra_list_diversity": 0.548,
+  "genre_fidelity": 0.94,
+  "nl_query_accuracy": 0.8,
+  "rag_groundedness": 1.0,
+  "median_latency_ms": 4.6,
+  "dj_backend": "template",
+  "nl_cases": [
+    {
+      "query": "sad acoustic ballad",
+      "means": {
+        "energy": 0.34,
+        "valence": 0.43,
+        "danceability": 0.75,
+        "acousticness": 0.72
+      },
+      "checks": [
+        "valence<0.5",
+        "acousticness>0.4"
+      ],
+      "pass": true
+    },
+    {
+      "query": "high energy workout",
+      "means": {
+        "energy": 0.77,
+        "valence": 0.6,
+        "danceability": 0.67,
+        "acousticness": 0.08
+      },
+      "checks": [
+        "energy>0.6"
+      ],
+      "pass": true
+    },
+    {
+      "query": "chill lo-fi study",
+      "means": {
+        "energy": 0.22,
+        "valence": 0.15,
+        "danceability": 0.63,
+        "acousticness": 0.84
+      },
+      "checks": [
+        "energy<0.5",
+        "acousticness>0.4"
+      ],
+      "pass": true
+    },
+    {
+      "query": "happy upbeat dance party",
+      "means": {
+        "energy": 0.88,
+        "valence": 0.38,
+        "danceability": 0.57,
+        "acousticness": 0.06
+      },
+      "checks": [
+        "valence>0.5",
+        "danceability>0.5"
+      ],
+      "pass": false
+    },
+    {
+      "query": "dark moody late night",
+      "means": {
+        "energy": 0.56,
+        "valence": 0.34,
+        "danceability": 0.59,
+        "acousticness": 0.21
+      },
+      "checks": [
+        "valence<0.5"
+      ],
+      "pass": true
+    }
+  ],
+  "groundedness_cases": [
+    {
+      "seed": "Blinding Lights \u2014 The Weeknd",
+      "groundedness": 1.0,
+      "claims": 6,
+      "violations": []
+    },
+    {
+      "seed": "Summertime Sadness \u2014 Lana Del Rey",
+      "groundedness": 1.0,
+      "claims": 6,
+      "violations": []
+    },
+    {
+      "seed": "Treat You Better \u2014 Shawn Mendes",
+      "groundedness": 1.0,
+      "claims": 6,
+      "violations": []
+    },
+    {
+      "seed": "Believer \u2014 Imagine Dragons",
+      "groundedness": 1.0,
+      "claims": 6,
+      "violations": []
+    },
+    {
+      "seed": "Shape of You \u2014 Ed Sheeran",
+      "groundedness": 1.0,
+      "claims": 6,
+      "violations": []
+    },
+    {
+      "seed": "bad guy \u2014 Billie Eilish",
+      "groundedness": 1.0,
+      "claims": 4,
+      "violations": []
+    }
+  ]
+}

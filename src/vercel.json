@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/[...path]?path=$1"
+    },
+    {
+      "src": "/style.css",
+      "dest": "static/style.css"
+    },
+    {
+      "src": "/script.js",
+      "dest": "static/script.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "static/index.html"
+    }
+  ]
+}

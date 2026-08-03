@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoundVector — AI Music Recommender</title>
+    <meta name="description" content="SoundVector: AI-powered music recommendation engine with mood-based search, personalized taste profiles, and artist discovery. 899K+ tracks.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app-layout">
+        <!-- TOP HEADER BAR -->
+        <header class="top-bar">
+            <div class="brand" onclick="goHome()" title="Go to personalized home">
+                <svg class="brand-logo-icon" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#1db954" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 10v4M6 6v12M10 3v18M14 7v10M18 5v14M22 10v4"/>
+                </svg>
+                <span class="logo-text">SoundVector</span>
+            </div>
+
+            <!-- SEARCH BAR -->
+            <div class="search-container">
+                <div class="search-input-wrapper">
+                    <svg class="search-icon-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#b3b3b3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="searchInput" placeholder="Search songs, artists, or describe a mood..." autocomplete="off">
+                    <div class="search-segment-pill">
+                        <button class="seg-btn active" id="typeTrackBtn" onclick="setSearchType('track')" title="Track & Artist ANN Retrieval">🎵 Track</button>
+                        <button class="seg-btn" id="typeNlpBtn" onclick="setSearchType('nlp')" title="Natural Language Mood Projection">💬 Mood</button>
+                    </div>
+                </div>
+                <div id="searchDropdown" class="autocomplete-dropdown hidden"></div>
+            </div>
+
+            <div class="header-right">
+                <button class="btn-playlist-gen" onclick="openPlaylistModal()" title="AI Playlist Generator">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    AI Playlist
+                </button>
+                <div class="profile-selector-wrap">
+                    <svg class="profile-icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#b3b3b3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <select id="userSelect" class="user-dropdown" title="Select taste profile"></select>
+                    <form id="newUserForm" class="new-user-form hidden">
+                        <input id="newUserInput" placeholder="New name" autocomplete="off">
+                        <button type="submit" class="btn-add-user">Save</button>
+                    </form>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN APP BODY -->
+        <div class="main-body">
+            <!-- LEFT NAVIGATION SIDEBAR -->
+            <aside class="sidebar">
+                <div class="nav-section">
+                    <button class="nav-item active" id="navHome" onclick="goHome()">
+                        <svg class="nav-svg-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                        <span>Home</span>
+                    </button>
+                    <button class="nav-item" id="navDiscover" onclick="switchTab('discover')">
+                        <svg class="nav-svg-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+                        </svg>
+                        <span>Discover</span>
+                    </button>
+                    <button class="nav-item" id="navMySongs" onclick="switchTab('mysongs')">
+                        <svg class="nav-svg-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 18V5l12-2v13"></path>
+                            <circle cx="6" cy="18" r="3"></circle>
+                            <circle cx="18" cy="16" r="3"></circle>
+                        </svg>
+                        <span>My Songs</span>
+                    </button>
+                </div>
+
+                <div class="nav-section mt-auto">
+                    <div class="profile-box glass-panel">
+                        <div class="profile-box-title">YOUR TASTE PROFILE</div>
+                        <div class="profile-user-name" id="profileCardUser">Yash</div>
+                        <div class="stat-group">
+                            <span class="stat-lbl">Top Genres</span>
+                            <div class="stat-val" id="topGenresList">Loading...</div>
+                        </div>
+                        <div class="stat-group mt-1">
+                            <span class="stat-lbl">Top Artists</span>
+                            <div class="stat-val" id="topArtistsList">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- CENTER CONTENT AREA -->
+            <main class="content-area">
+                <!-- HOME VIEW -->
+                <section id="viewHome" class="view-panel">
+                    <div id="homeContent">
+                        <div class="home-skeleton">
+                            <div class="skeleton-greeting skeleton-pulse"></div>
+                            <div class="skeleton-chips">
+                                <div class="skeleton-chip skeleton-pulse"></div>
+                                <div class="skeleton-chip skeleton-pulse"></div>
+                                <div class="skeleton-chip skeleton-pulse"></div>
+                            </div>
+                            <div class="skeleton-section">
+                                <div class="skeleton-section-title skeleton-pulse"></div>
+                                <div class="skeleton-cards-row">
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                </div>
+                            </div>
+                            <div class="skeleton-section">
+                                <div class="skeleton-section-title skeleton-pulse"></div>
+                                <div class="skeleton-cards-row">
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                    <div class="skeleton-card skeleton-pulse"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- DISCOVER VIEW -->
+                <section id="viewDiscover" class="view-panel hidden">
+                    <!-- MODES BAR -->
+                    <div class="mode-bar">
+                        <div class="mode-chips">
+                            <button class="mode-chip active" onclick="setMode('similar', this)">Similar</button>
+                            <button class="mode-chip" onclick="setMode('vibe', this)">Vibe Match</button>
+                            <button class="mode-chip" onclick="setMode('popular', this)">Popular</button>
+                            <button class="mode-chip" onclick="setMode('discover', this)">Discover</button>
+                        </div>
+                    </div>
+                    <div id="recList">
+                        <div class="loading-state">
+                            <div class="spinner"></div>
+                            <div>Loading recommendations...</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ARTIST DISCOGRAPHY VIEW -->
+                <section id="viewArtist" class="view-panel hidden">
+                    <div class="artist-hero-header">
+                        <div class="artist-avatar-circle" id="artistAvatarCircle">🎙️</div>
+                        <div class="artist-hero-info">
+                            <div class="artist-verified-badge">VERIFIED ARTIST</div>
+                            <h1 id="artistHeroName">Artist Name</h1>
+                            <div class="artist-hero-meta" id="artistHeroMeta">Discography</div>
+                        </div>
+                    </div>
+                    <div class="artist-filter-bar">
+                        <span class="filter-lbl">Sort Tracks:</span>
+                        <button class="filter-btn active" onclick="sortArtistTracks('popularity', this)">
+                            <svg class="filter-btn-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                            Popularity
+                        </button>
+                        <button class="filter-btn" onclick="sortArtistTracks('newest', this)">
+                            <svg class="filter-btn-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            Newest
+                        </button>
+                        <button class="filter-btn" onclick="sortArtistTracks('oldest', this)">
+                            <svg class="filter-btn-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            Oldest
+                        </button>
+                        <button class="filter-btn" onclick="sortArtistTracks('name', this)">
+                            <svg class="filter-btn-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 7h6m-6 5h4m-4 5h2M3 17l4-10 4 10M5 13h4"/></svg>
+                            Title A-Z
+                        </button>
+                        <button class="filter-btn" onclick="toggleArtistAlbumsView(this)">
+                            <svg class="filter-btn-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                            Albums & Releases
+                        </button>
+                    </div>
+                    <div id="artistTracksList">
+                        <div class="loading-state">Loading artist tracks...</div>
+                    </div>
+                </section>
+
+                <!-- ALBUM / MOVIE SOUNDTRACK VIEW -->
+                <section id="viewAlbum" class="view-panel hidden">
+                    <div class="album-hero-card">
+                        <div class="album-hero-art enrich-art" id="albumArtBox">💿</div>
+                        <div class="album-hero-info">
+                            <div class="artist-verified-badge" id="albumTag">ALBUM / MOVIE SOUNDTRACK</div>
+                            <h1 class="album-hero-name" id="albumTitle">Movie Title</h1>
+                            <div class="album-hero-meta" id="albumMeta">Artist · Year · Tracks</div>
+                        </div>
+                    </div>
+                    <div id="albumTracksList" style="margin-top:20px;">
+                        <div class="loading-state">Loading album tracks...</div>
+                    </div>
+                </section>
+
+                <!-- MY SONGS & HISTORY VIEW -->
+                <section id="viewMySongs" class="view-panel hidden">
+                    <div class="history-header">
+                        <div>
+                            <h2 class="history-title">My Taste & Activity</h2>
+                            <div class="history-subtitle">Your liked songs, skipped tracks, and interactive recommendations history</div>
+                        </div>
+                        <div class="history-filters">
+                            <button class="filter-btn active" onclick="filterMySongs('all', this)">All History</button>
+                            <button class="filter-btn" onclick="filterMySongs('like', this)">Liked</button>
+                            <button class="filter-btn" onclick="filterMySongs('dislike', this)">Disliked</button>
+                            <button class="filter-btn" onclick="filterMySongs('skip', this)">Skipped</button>
+                        </div>
+                    </div>
+                    <div id="mySongsList">
+                        <div class="loading-state">Loading history...</div>
+                    </div>
+                </section>
+            </main>
+
+            <!-- RIGHT SIDEBAR: AI INTEL & AUDIO METERS -->
+            <aside class="dj-sidebar">
+                <!-- AI INTEL PANEL -->
+                <div class="panel-box glass-panel">
+                    <div class="panel-header">
+                        <span class="panel-title">
+                            <svg class="panel-icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z"/></svg>
+                            Track Insights
+                        </span>
+                    </div>
+                    <div id="intelPanel" class="intel-content">
+                        <div class="intel-headline" id="intelHeadline">Search a song or mood to get insights</div>
+                    </div>
+                </div>
+
+                <!-- AUDIO VECTOR METERS (DYNAMIC - SHOWS ON TRACK / SEARCH SELECTION) -->
+                <div class="panel-box glass-panel hidden" id="audioVectorPanel">
+                    <div class="panel-title mb-2">AUDIO VECTOR ATTRIBUTES</div>
+                    
+                    <div class="meter-row">
+                        <div class="meter-meta">
+                            <span>Energy</span>
+                            <span id="mEnergy" class="meter-val">0.00</span>
+                        </div>
+                        <div class="meter-track">
+                            <div class="meter-fill energy" id="fEnergy" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div class="meter-row">
+                        <div class="meter-meta">
+                            <span>Valence (Mood)</span>
+                            <span id="mValence" class="meter-val">0.00</span>
+                        </div>
+                        <div class="meter-track">
+                            <div class="meter-fill valence" id="fValence" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div class="meter-row">
+                        <div class="meter-meta">
+                            <span>Danceability</span>
+                            <span id="mDance" class="meter-val">0.00</span>
+                        </div>
+                        <div class="meter-track">
+                            <div class="meter-fill dance" id="fDance" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div class="meter-row">
+                        <div class="meter-meta">
+                            <span>Tempo</span>
+                            <span id="mTempo" class="meter-val">0 BPM</span>
+                        </div>
+                        <div class="meter-track">
+                            <div class="meter-fill tempo" id="fTempo" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- STICKY BOTTOM FLOATING PLAYER BAR -->
+    <div id="globalPlayerBar" class="global-player-bar hidden">
+        <div class="player-left">
+            <div id="playerThumb" class="player-thumb">🎵</div>
+            <div class="player-info">
+                <div id="playerTrackName" class="player-track-name">Track Name</div>
+                <div id="playerArtistName" class="player-artist-name">Artist Name</div>
+            </div>
+        </div>
+        <div class="player-center">
+            <button id="playerPlayBtn" class="player-control-btn" onclick="togglePlayerBarPlay()">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <div class="player-progress-wrap">
+                <span id="playerCurrentTime" class="player-time">0:00</span>
+                <div class="player-progress-bar">
+                    <div id="playerProgressFill" class="player-progress-fill"></div>
+                </div>
+                <span class="player-time">0:30</span>
+            </div>
+        </div>
+        <div class="player-right">
+            <button class="player-close-btn" onclick="closePlayerBar()" title="Close Player">✕</button>
+        </div>
+    </div>
+
+    <!-- Toast notification overlay -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
