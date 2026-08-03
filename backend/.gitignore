@@ -10,6 +10,7 @@ __pycache__
 data/*
 !data/tracks.parquet
 artifacts/
-profiles/
+profiles/*.events.jsonl
+!profiles/.gitkeep
 
 future.md

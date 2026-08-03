@@ -2732,61 +2732,100 @@ body {
 }
 
 /* ============================================
-   AUTH & USER STYLES
+   AUTH & PROFILE DROPDOWN STYLES
    ============================================ */
-.current-user-display {
+.profile-selector-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+.profile-pill-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 6px 14px;
+    color: var(--text-primary);
     font-size: 14px;
     font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.profile-pill-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.current-user-display {
     color: var(--text-primary);
-    background: rgba(255,255,255,0.05);
-    padding: 6px 12px;
-    border-radius: 20px;
-    margin-right: 8px;
+    font-weight: 600;
 }
 
-.btn-delete {
+.dropdown-chevron {
     color: var(--text-secondary);
+    transition: transform 0.2s ease;
 }
 
-.btn-delete:hover {
-    color: #f87171;
-    background: rgba(248,113,113,0.1);
+.profile-selector-wrap.open .dropdown-chevron {
+    transform: rotate(180deg);
 }
 
-.login-modal {
-    text-align: center;
-    padding: 30px;
-    max-width: 400px;
-}
-
-.login-modal h2 {
-    margin-top: 0;
-    margin-bottom: 10px;
-}
-
-.login-modal p {
-    color: var(--text-secondary);
-    margin-bottom: 20px;
-}
-
-.login-form {
+.profile-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 190px;
+    background: #181818;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(16px);
+    z-index: 1000;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 4px;
+    transform-origin: top right;
+    animation: dropdownFadeIn 0.15s ease-out;
 }
 
-.login-form input {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid var(--glass-border);
-    color: var(--text-primary);
-    padding: 12px 16px;
+@keyframes dropdownFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.profile-dropdown-menu.hidden {
+    display: none !important;
+}
+
+.profile-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    background: transparent;
+    border: none;
     border-radius: 8px;
-    font-size: 16px;
-    outline: none;
-    transition: border-color 0.2s ease;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s ease;
 }
 
-.login-form input:focus {
-    border-color: var(--accent);
-    background: rgba(255,255,255,0.08);
+.profile-dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.profile-dropdown-item.item-danger {
+    color: #f87171;
+}
+
+.profile-dropdown-item.item-danger:hover {
+    background: rgba(248, 113, 113, 0.12);
 }

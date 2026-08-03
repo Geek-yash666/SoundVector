@@ -133,12 +133,36 @@ function switchTab(tabId) {
 // User Profile
 // ---------------------------------------------------------
 const currentUserDisplay = document.getElementById('currentUserDisplay');
+const profilePillBtn = document.getElementById('profilePillBtn');
+const profilePillWrap = document.getElementById('profilePillWrap');
+const profileDropdown = document.getElementById('profileDropdown');
 const logoutBtn = document.getElementById('logoutBtn');
 const deleteUserBtn = document.getElementById('deleteUserBtn');
 const loginModal = document.getElementById('loginModal');
 const loginForm = document.getElementById('loginForm');
 const loginInput = document.getElementById('loginInput');
 
+// Profile dropdown menu toggle
+if (profilePillBtn && profileDropdown) {
+    profilePillBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = !profileDropdown.classList.contains('hidden');
+        if (isOpen) {
+            profileDropdown.classList.add('hidden');
+            if (profilePillWrap) profilePillWrap.classList.remove('open');
+        } else {
+            profileDropdown.classList.remove('hidden');
+            if (profilePillWrap) profilePillWrap.classList.add('open');
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (profilePillWrap && !profilePillWrap.contains(e.target)) {
+            profileDropdown.classList.add('hidden');
+            profilePillWrap.classList.remove('open');
+        }
+    });
+}
 
 function checkAuth() {
     const storedUser = localStorage.getItem('soundvector_user');
@@ -172,15 +196,27 @@ if (loginForm) {
 }
 
 if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
+    logoutBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (profileDropdown) profileDropdown.classList.add('hidden');
+        if (profilePillWrap) profilePillWrap.classList.remove('open');
         localStorage.removeItem('soundvector_user');
         if (loginInput) loginInput.value = '';
+        showToast("Logged out successfully.");
         checkAuth();
     });
 }
 
 if (deleteUserBtn) {
-    deleteUserBtn.addEventListener('click', async () => {
+    deleteUserBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (profileDropdown) profileDropdown.classList.add('hidden');
+        if (profilePillWrap) profilePillWrap.classList.remove('open');
+
+        if (!currentUser || currentUser === 'Guest') {
+            showToast("No active profile to delete.", "error");
+            return;
+        }
 
         if (!confirm(`Are you sure you want to completely delete the profile for '${currentUser}'? This cannot be undone.`)) {
             return;
@@ -188,15 +224,17 @@ if (deleteUserBtn) {
         try {
             const res = await fetch(`${API_BASE}/api/users/${encodeURIComponent(currentUser)}`, { method: 'DELETE' });
             if (res.ok) {
-                showToast("Profile deleted successfully.");
+                showToast(`Profile '${currentUser}' deleted successfully.`);
                 localStorage.removeItem('soundvector_user');
-                setTimeout(() => location.reload(), 1500);
+                setTimeout(() => {
+                    checkAuth();
+                }, 1000);
             } else {
                 const data = await res.json();
                 showToast(data.detail || "Failed to delete profile.", "error");
             }
-        } catch(e) {
-            console.error(e);
+        } catch(err) {
+            console.error(err);
             showToast("Network error deleting profile.", "error");
         }
     });
@@ -207,13 +245,7 @@ function onUserChanged() {
     const profileCardUser = document.getElementById('profileCardUser');
     if (profileCardUser) profileCardUser.innerText = currentUser;
     
-    if (deleteUserBtn) {
-        deleteUserBtn.classList.remove('hidden');
-    }
-    
-    showToast(`Logged in as '${currentUser}'`);
     refreshProfileStats();
-    // Reload home page with new profile
     if (currentView === 'home') loadHomePage();
     if (currentView === 'mysongs') loadMySongs();
 }

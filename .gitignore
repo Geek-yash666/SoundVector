@@ -12,7 +12,8 @@ data/*
 
 
 artifacts/
-profiles/
+profiles/*.events.jsonl
+!profiles/.gitkeep
 
 # Ignore nested .git folders inside backend and src so root tracks files normally
 backend/.git
