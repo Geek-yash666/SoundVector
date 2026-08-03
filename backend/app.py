@@ -1072,7 +1072,7 @@ SHORT_TERM_DECAY = 0.6
 class ProfileStore:
     def __init__(self, engine: RecommendationEngine, profiles_dir: str = "profiles"):
         self.engine = engine
-        self.bucket_url = os.environ.get("HF_PROFILES_BUCKET")
+        self.bucket_url = os.environ.get("HF_BUCKET_URL")
         self.use_hf = False
         self.fs = None
         
