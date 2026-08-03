@@ -1,4 +1,31 @@
+// =============================================================
+// BUILD VERSION — increment this on every deploy.
+// Changing this value forces all users to reload fresh assets
+// and clears any stale localStorage state from the old build.
+// =============================================================
+const BUILD_VERSION = '2.0';
+
+(function _clearStaleBuildCache() {
+    const STORE_KEY = 'soundvector_build_version';
+    const stored = localStorage.getItem(STORE_KEY);
+    if (stored !== BUILD_VERSION) {
+        // New build detected — wipe all SoundVector cache keys EXCEPT the user login
+        const savedUser = localStorage.getItem('soundvector_user');
+        // Clear everything in localStorage that belongs to SoundVector
+        Object.keys(localStorage).forEach(k => {
+            if (k.startsWith('soundvector_')) localStorage.removeItem(k);
+        });
+        // Re-persist login so user isn't logged out on upgrade
+        if (savedUser) localStorage.setItem('soundvector_user', savedUser);
+        // Mark the new version so we don't clear again until next deploy
+        localStorage.setItem(STORE_KEY, BUILD_VERSION);
+        // Also clear sessionStorage entirely for a clean slate
+        sessionStorage.clear();
+    }
+})();
+
 let API_BASE = "";
+
 
 let currentMode = 'similar';
 let currentSearchType = 'track';
@@ -373,9 +400,10 @@ searchInput.addEventListener('input', (e) => {
     if (currentSearchType === 'nlp') return;
     const q = e.target.value.trim();
     clearTimeout(searchTimeout);
-    if (q.length < 2) { hideSuggestions(); return; }
+    if (q.length < 3) { hideSuggestions(); return; }
 
     searchTimeout = setTimeout(async () => {
+
         try {
             const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`);
             if (!res.ok) return hideSuggestions();
@@ -623,6 +651,7 @@ function renderHomePage(data) {
     // Recommendation Sections
     if (data.sections && data.sections.length > 0) {
         data.sections.forEach(section => {
+            if (section.tracks) section.tracks.forEach(seedEnrichCache);
             html += renderHomeSection(section);
         });
     }
@@ -668,7 +697,7 @@ function renderHomeSection(section) {
                 </div>
                 <div class="listen-on-row" id="enrich-hs-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}"></div>
             </div>`;
-        setTimeout(() => loadTrackEnrichment(t.name, t.artist, `enrich-hs-${t.row}`, t.row), idx * 60);
+        queueTrackEnrichment(t.name, t.artist, t.row, t);
     });
 
     html += `</div></div>`;
@@ -782,7 +811,11 @@ async function executeSearch(query, forcedType = null, seedTrack = null) {
 }
 
 function renderMainData(data) {
+    if (data && data.recs) {
+        data.recs.forEach(seedEnrichCache);
+    }
     const audioPanel = document.getElementById('audioVectorPanel');
+
     if (audioPanel) audioPanel.classList.remove('hidden');
 
     // Audio Feature Meters (animated)
@@ -830,7 +863,7 @@ function renderMainData(data) {
     html += `<div id="trackCardsContainer">`;
     data.recs.forEach((r, idx) => {
         const sigs = r.signals || {};
-        const activeSig = userTrackSignals[r.row] || '';
+        const activeSig = (r.row >= 0 ? userTrackSignals[r.row] : null) || userTrackSignals[getTrackKey(r.name, r.artist)] || '';
         html += `
         <div class="track-card" id="card-${r.row}" onclick="selectTrackForInsights(${r.row}, '${escapeJs(r.name)}', '${escapeJs(r.artist)}', this)">
             <div class="track-info-side">
@@ -856,7 +889,7 @@ function renderMainData(data) {
             </div>
         </div>`;
         // Lazy-load enrichment for each rec card
-        setTimeout(() => loadTrackEnrichment(r.name, r.artist, `enrich-${r.row}`, r.row), idx * 80);
+        queueTrackEnrichment(r.name, r.artist, r.row, r);
     });
     html += `</div>`;
     
@@ -896,7 +929,7 @@ async function loadMoreRecommendations() {
             data.recs.forEach((r, idx) => {
                 const globalIdx = currentOffset + idx;
                 const sigs = r.signals || {};
-                const activeSig = userTrackSignals[r.row] || '';
+                const activeSig = (r.row >= 0 ? userTrackSignals[r.row] : null) || userTrackSignals[getTrackKey(r.name, r.artist)] || '';
                 appendHtml += `
                 <div class="track-card" id="card-${r.row}" onclick="selectTrackForInsights(${r.row}, '${escapeJs(r.name)}', '${escapeJs(r.artist)}', this)">
                     <div class="track-info-side">
@@ -921,7 +954,7 @@ async function loadMoreRecommendations() {
                         </div>
                     </div>
                 </div>`;
-                setTimeout(() => loadTrackEnrichment(r.name, r.artist, `enrich-${r.row}`, r.row), idx * 80);
+                queueTrackEnrichment(r.name, r.artist, r.row, r);
             });
             container.insertAdjacentHTML('beforeend', appendHtml);
         }
@@ -1126,36 +1159,49 @@ function openMobileTrackInsights(trackName, artistName, data, row) {
 
 // ---------------------------------------------------------
 // Track Enrichment: Deezer + iTunes Preview + YouTube Music
+// Batch system: collects enrichment needs and fires ONE /api/batch_enrich
+// instead of one /api/enrich per card (eliminates the request waterfall).
 // ---------------------------------------------------------
 const enrichCache = {};
+const _pendingEnrich = new Set(); // tracks keys currently in-flight
+let _enrichQueue = [];            // batch queue
+let _enrichFlushTimer = null;     // debounce timer for flushing
 
-async function loadTrackEnrichment(trackName, artistName, containerId, row) {
-    if (!trackName || !artistName) return;
-    const cacheKey = getTrackKey(trackName, artistName);
-    let data = enrichCache[cacheKey];
-    if (!data) {
-        try {
-            const res = await fetch(`${API_BASE}/api/enrich?track=${encodeURIComponent(trackName)}&artist=${encodeURIComponent(artistName)}`);
-            data = await res.json();
-            enrichCache[cacheKey] = data;
-        } catch (e) { return; }
+function seedEnrichCache(track) {
+    if (!track || !track.name || !track.artist) return;
+    if (track.deezer_album_art || track.deezer_preview_url || track.deezer_link || track.youtube_music_url) {
+        const cacheKey = getTrackKey(track.name, track.artist);
+        if (!enrichCache[cacheKey]) {
+            enrichCache[cacheKey] = {
+                deezer_album_art: track.deezer_album_art || "",
+                deezer_preview_url: track.deezer_preview_url || "",
+                deezer_link: track.deezer_link || "",
+                deezer_album_name: track.deezer_album_name || "",
+                youtube_music_url: track.youtube_music_url || `https://music.youtube.com/search?q=${encodeURIComponent(track.artist + ' ' + track.name)}`,
+                youtube_url: track.youtube_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(track.artist + ' ' + track.name)}`
+            };
+        }
     }
+}
 
-    let btns = '';
+/**
+ * Apply enrichment data to all matching DOM elements (art boxes + listen rows).
+ */
+function _applyEnrichmentToDOM(cacheKey, data, trackName, artistName, row) {
+    const btns = [];
     if (data.deezer_link) {
-        btns += `<a class="listen-btn deezer-btn" href="${data.deezer_link}" target="_blank" onclick="event.stopPropagation();" title="Open on Deezer">${SVG_ICONS.deezer} <span>Deezer</span></a>`;
+        btns.push(`<a class="listen-btn deezer-btn" href="${data.deezer_link}" target="_blank" onclick="event.stopPropagation();" title="Open on Deezer">${SVG_ICONS.deezer} <span>Deezer</span></a>`);
     }
     if (data.youtube_music_url) {
-        btns += `<a class="listen-btn yt-btn" href="${data.youtube_music_url}" target="_blank" onclick="event.stopPropagation();" title="Search on YouTube Music">${SVG_ICONS.youtube} <span>YT Music</span></a>`;
+        btns.push(`<a class="listen-btn yt-btn" href="${data.youtube_music_url}" target="_blank" onclick="event.stopPropagation();" title="Search on YouTube Music">${SVG_ICONS.youtube} <span>YT Music</span></a>`);
     }
+    const btnsHtml = btns.join('');
 
-    // Update ALL matching cover art elements in DOM with album art + play overlay
     if (data.deezer_album_art) {
         document.querySelectorAll('.enrich-art').forEach(artEl => {
             if (artEl.getAttribute('data-track-key') === cacheKey) {
                 let overlayHtml = '';
                 if (data.deezer_preview_url) {
-                    // Force HTTPS — iOS Safari blocks HTTP audio on HTTPS pages
                     const httpsUrl = data.deezer_preview_url.replace(/^http:\/\//i, 'https://');
                     const safeUrl = httpsUrl.replace(/"/g, '&quot;');
                     const safeName = (trackName || '').replace(/"/g, '&quot;');
@@ -1168,17 +1214,105 @@ async function loadTrackEnrichment(trackName, artistName, containerId, row) {
         });
     }
 
-    // Update ALL matching listen rows in DOM
     document.querySelectorAll('.listen-on-row').forEach(listenEl => {
         if (listenEl.getAttribute('data-track-key') === cacheKey) {
-            if (btns) {
-                listenEl.innerHTML = btns;
+            if (btnsHtml) {
+                listenEl.innerHTML = btnsHtml;
                 listenEl.style.display = 'flex';
             } else {
                 listenEl.style.display = 'none';
             }
         }
     });
+}
+
+/**
+ * Flush the enrichment queue: fire ONE /api/batch_enrich for all queued tracks.
+ * This replaces the old per-card setTimeout + /api/enrich waterfall.
+ */
+async function _flushEnrichQueue() {
+    if (_enrichQueue.length === 0) return;
+    const batch = _enrichQueue.splice(0, _enrichQueue.length); // drain queue atomically
+
+    // Filter to only tracks not already cached or in-flight
+    const toFetch = [];
+    const localData = [];
+    for (const item of batch) {
+        const key = getTrackKey(item.name, item.artist);
+        if (enrichCache[key]) {
+            localData.push({ ...item, _cached: enrichCache[key] });
+        } else if (!_pendingEnrich.has(key)) {
+            _pendingEnrich.add(key);
+            toFetch.push(item);
+        }
+    }
+
+    // Apply already-cached items immediately
+    for (const item of localData) {
+        _applyEnrichmentToDOM(getTrackKey(item.name, item.artist), item._cached, item.name, item.artist, item.row);
+    }
+
+    if (toFetch.length === 0) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/api/batch_enrich`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(toFetch.map(t => ({ name: t.name, artist: t.artist, row: t.row })))
+        });
+        const data = await res.json();
+        const enriched = data.tracks || [];
+        for (const track of enriched) {
+            if (!track || !track.name || !track.artist) continue;
+            const key = getTrackKey(track.name, track.artist);
+            const cached = {
+                deezer_album_art: track.deezer_album_art || '',
+                deezer_preview_url: track.deezer_preview_url || '',
+                deezer_link: track.deezer_link || '',
+                deezer_album_name: track.deezer_album_name || '',
+                youtube_music_url: track.youtube_music_url || `https://music.youtube.com/search?q=${encodeURIComponent(track.artist + ' ' + track.name)}`,
+                youtube_url: track.youtube_url || ''
+            };
+            enrichCache[key] = cached;
+            _pendingEnrich.delete(key);
+            // Find original row from our toFetch list
+            const orig = toFetch.find(t => getTrackKey(t.name, t.artist) === key);
+            _applyEnrichmentToDOM(key, cached, track.name, track.artist, orig ? orig.row : -1);
+        }
+    } catch (e) {
+        // On failure, remove from pending so they can be retried
+        for (const item of toFetch) {
+            _pendingEnrich.delete(getTrackKey(item.name, item.artist));
+        }
+    }
+}
+
+/**
+ * Queue a track for enrichment (debounced batch flush).
+ * This is the replacement for the old loadTrackEnrichment()+setTimeout waterfall.
+ */
+function queueTrackEnrichment(trackName, artistName, row, trackObj) {
+    if (!trackName || !artistName) return;
+    if (trackObj) seedEnrichCache(trackObj);
+    const key = getTrackKey(trackName, artistName);
+    if (enrichCache[key]) {
+        // Already cached — apply immediately
+        _applyEnrichmentToDOM(key, enrichCache[key], trackName, artistName, row);
+        return;
+    }
+    if (_pendingEnrich.has(key)) return; // already in-flight
+    _enrichQueue.push({ name: trackName, artist: artistName, row: row || -1 });
+    // Debounce: collect for 30ms then flush as one batch
+    clearTimeout(_enrichFlushTimer);
+    _enrichFlushTimer = setTimeout(_flushEnrichQueue, 30);
+}
+
+/**
+ * Legacy compatibility shim — redirect to queue system.
+ * @deprecated Use queueTrackEnrichment() for new code.
+ */
+async function loadTrackEnrichment(trackName, artistName, containerId, row, trackObj) {
+    queueTrackEnrichment(trackName, artistName, row, trackObj);
 }
 
 function handlePreviewClick(btn) {
@@ -1463,6 +1597,9 @@ function closePlaylistModal() {
 }
 
 function renderPlaylistView(data) {
+    if (data && data.tracks) {
+        data.tracks.forEach(seedEnrichCache);
+    }
     const titleEl = document.getElementById('playlistTitle');
     const metaEl = document.getElementById('playlistMeta');
     const listEl = document.getElementById('playlistViewTracksList');
@@ -1486,7 +1623,7 @@ function renderPlaylistView(data) {
             </div>
             <button class="btn-secondary" onclick="event.stopPropagation();selectDropdownItem('${escapeJs(t.name)}', '${escapeJs(t.artist)}')" style="padding:6px 14px;font-size:12px;border-radius:500px;">Explore</button>
         </div>`;
-        setTimeout(() => loadTrackEnrichment(t.name, t.artist, `art-plv-${t.row || i}`, t.row || 0), i * 40);
+        queueTrackEnrichment(t.name, t.artist, t.row || 0, t);
     });
     html += `</div>`;
     listEl.innerHTML = html;
@@ -1580,17 +1717,28 @@ async function loadArtistHeaderPhoto(artistName) {
     } catch (e) { }
 }
 
+const artistImageCache = {};
+
 async function loadArtistCircleAvatar(artistName, elementId) {
     const el = document.getElementById(elementId);
-    if (!el) return;
+    if (!el || !artistName) return;
+    const key = artistName.toLowerCase().trim();
+    if (artistImageCache[key] !== undefined) {
+        if (artistImageCache[key]) {
+            el.innerHTML = `<img src="${artistImageCache[key]}" alt="${artistName}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+        }
+        return;
+    }
     try {
         const res = await fetch(`${API_BASE}/api/artist_image?q=${encodeURIComponent(artistName)}`);
         const data = await res.json();
-        if (data && data.image_url) {
-            el.innerHTML = `<img src="${data.image_url}" alt="${artistName}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+        artistImageCache[key] = (data && data.image_url) ? data.image_url : "";
+        if (artistImageCache[key]) {
+            el.innerHTML = `<img src="${artistImageCache[key]}" alt="${artistName}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
         }
-    } catch (e) { }
+    } catch (e) { artistImageCache[key] = ""; }
 }
+
 
 function renderLastfmArtistInfo(lfm, artistName) {
     let existing = document.getElementById('lastfmArtistPanel');
@@ -1672,7 +1820,7 @@ function renderArtistTracks(tracks) {
     let html = '';
     tracks.forEach((t, idx) => {
         const genres = (t.base_genres || t.genres || []).slice(0, 2);
-        const activeSig = userTrackSignals[t.row] || '';
+        const activeSig = (t.row >= 0 ? userTrackSignals[t.row] : null) || userTrackSignals[getTrackKey(t.name, t.artist)] || '';
         html += `
         <div class="track-card" id="card-a-${t.row}" onclick="selectTrackForInsights(${t.row}, '${escapeJs(t.name)}', '${escapeJs(t.artist)}', this)">
             <div class="track-info-side">
@@ -1696,7 +1844,7 @@ function renderArtistTracks(tracks) {
                 </div>
             </div>
         </div>`;
-        setTimeout(() => loadTrackEnrichment(t.name, t.artist, `enrich-a-${t.row}`, t.row), idx * 15);
+        queueTrackEnrichment(t.name, t.artist, t.row, t);
     });
 
     document.getElementById('artistTracksList').innerHTML = html;
@@ -1738,7 +1886,7 @@ function renderArtistAlbums(albums) {
         </div>`;
 
         if (firstTrack) {
-            setTimeout(() => loadTrackEnrichment(firstTrack.name, firstTrack.artist, `art-album-${idx}`, firstTrack.row), idx * 60);
+            queueTrackEnrichment(firstTrack.name, firstTrack.artist, firstTrack.row, firstTrack);
         }
     });
     html += `</div>`;
@@ -1786,7 +1934,7 @@ function renderExpandedAlbum(albums, idx) {
     album.tracks.forEach((t, tidx) => {
         const trackKey = getTrackKey(t.name, t.artist);
         const genres = (t.base_genres || t.genres || []).slice(0, 2);
-        const activeSig = userTrackSignals[t.row] || '';
+        const activeSig = (t.row >= 0 ? userTrackSignals[t.row] : null) || userTrackSignals[getTrackKey(t.name, t.artist)] || '';
         html += `
         <div class="track-card" id="card-ex-${t.row}" onclick="selectTrackForInsights(${t.row}, '${escapeJs(t.name)}', '${escapeJs(t.artist)}', this)">
             <div class="track-info-side">
@@ -1809,7 +1957,7 @@ function renderExpandedAlbum(albums, idx) {
                 </div>
             </div>
         </div>`;
-        setTimeout(() => loadTrackEnrichment(t.name, t.artist, `enrich-ex-${t.row}`, t.row), tidx * 60);
+        queueTrackEnrichment(t.name, t.artist, t.row, t);
     });
     html += `</div>`;
     document.getElementById('artistTracksList').innerHTML = html;
@@ -1848,6 +1996,10 @@ async function openAlbumPage(albumTitle, artistName = '', albumId = '', source =
             document.getElementById('albumArtBox').innerHTML = `<img src="${data.tracks[0].deezer_album_art}" alt="${albumTitle}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`;
         }
 
+        if (data.tracks) {
+            data.tracks.forEach(seedEnrichCache);
+        }
+
         renderAlbumTrackList(data.tracks, albumTitle);
     } catch (err) {
         document.getElementById('albumTracksList').innerHTML = `<div class="loading-state">Could not load album tracks.</div>`;
@@ -1864,7 +2016,7 @@ function renderAlbumTrackList(tracks, albumTitle) {
     tracks.forEach((t, idx) => {
         const trackKey = getTrackKey(t.name, t.artist);
         const genres = (t.base_genres || t.genres || []).slice(0, 2);
-        const activeSig = userTrackSignals[t.row] || '';
+        const activeSig = (t.row >= 0 ? userTrackSignals[t.row] : null) || userTrackSignals[getTrackKey(t.name, t.artist)] || '';
         const artHtml = t.deezer_album_art ? `<img src="${t.deezer_album_art}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : '🎵';
 
         html += `
@@ -1890,7 +2042,7 @@ function renderAlbumTrackList(tracks, albumTitle) {
                 </div>
             </div>
         </div>`;
-        setTimeout(() => loadTrackEnrichment(t.name, t.artist, `enrich-alb-${idx}`, t.row), idx * 40);
+        queueTrackEnrichment(t.name, t.artist, t.row, t);
     });
 
     document.getElementById('albumTracksList').innerHTML = html;
@@ -1901,8 +2053,35 @@ function renderAlbumTrackList(tracks, albumTitle) {
 // ---------------------------------------------------------
 let userTrackSignals = {};
 
-async function sendFeedback(row, signal, btnElem) {
-    userTrackSignals[row] = signal;
+async function sendFeedback(row, signal, btnElem, extraName, extraArtist) {
+    let name = extraName || "";
+    let artist = extraArtist || "";
+    let deezer_album_art = "";
+    let deezer_preview_url = "";
+
+    if (btnElem) {
+        const card = btnElem.closest('.track-card') || btnElem.closest('.home-track-card');
+        if (card) {
+            const nameEl = card.querySelector('.track-name') || card.querySelector('.home-card-name');
+            const artistEl = card.querySelector('.track-artist') || card.querySelector('.home-card-artist');
+            const imgEl = card.querySelector('.cover-art-box img') || card.querySelector('.home-card-art img');
+            if (nameEl && !name) name = nameEl.innerText.replace(/^\d+\.\s*/, '').trim();
+            if (artistEl && !artist) artist = artistEl.innerText.split('·')[0].trim();
+            if (imgEl) deezer_album_art = imgEl.src || "";
+        }
+    }
+
+    const trackKey = (name && artist) ? getTrackKey(name, artist) : "";
+    const rKey = (row !== undefined && row !== null && row >= 0) ? row : (trackKey || `ext_${name}_${artist}`);
+
+    // YouTube-style toggle logic: clicking an active button toggles it OFF ('none')
+    let activeSignal = signal;
+    if (userTrackSignals[rKey] === signal || (trackKey && userTrackSignals[trackKey] === signal)) {
+        activeSignal = "none";
+    }
+
+    userTrackSignals[rKey] = activeSignal;
+    if (trackKey) userTrackSignals[trackKey] = activeSignal;
 
     if (btnElem) {
         btnElem.classList.add('anim-pulse');
@@ -1911,19 +2090,44 @@ async function sendFeedback(row, signal, btnElem) {
         const parent = btnElem.parentElement;
         if (parent) {
             parent.querySelectorAll('.btn-act').forEach(b => {
-                b.classList.remove('active-like', 'active-dislike', 'active-skip');
+                b.classList.remove('active-like', 'active-dislike');
             });
-            if (signal === 'like') btnElem.classList.add('active-like');
-            if (signal === 'dislike') btnElem.classList.add('active-dislike');
-            if (signal === 'skip') btnElem.classList.add('active-skip');
+            if (activeSignal === 'like') btnElem.classList.add('active-like');
+            if (activeSignal === 'dislike') btnElem.classList.add('active-dislike');
         }
+    }
+
+    if (name && artist) {
+        const cacheKey = getTrackKey(name, artist);
+        const cached = enrichCache[cacheKey];
+        if (cached) {
+            if (cached.deezer_album_art) deezer_album_art = cached.deezer_album_art;
+            if (cached.deezer_preview_url) deezer_preview_url = cached.deezer_preview_url;
+        }
+    }
+
+    if (activeSignal === 'none') {
+        showToast(signal === 'like' ? 'Removed from Liked Songs' : 'Dislike removed');
+    } else if (activeSignal === 'like') {
+        showToast(`Added "${name || 'song'}" to Liked Songs`, 'success');
+    } else if (activeSignal === 'dislike') {
+        showToast(`Marked "${name || 'song'}" as Disliked`, 'info');
     }
 
     try {
         await fetch(`${API_BASE}/api/feedback`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user: currentUser, row, signal, mode: currentMode })
+            body: JSON.stringify({
+                user: currentUser,
+                row: (row !== undefined && row !== null) ? row : -1,
+                signal: activeSignal,
+                mode: currentMode,
+                name: name || undefined,
+                artist: artist || undefined,
+                deezer_album_art: deezer_album_art || undefined,
+                deezer_preview_url: deezer_preview_url || undefined
+            })
         });
         refreshProfileStats();
     } catch (err) { console.error(err); }
@@ -1932,16 +2136,43 @@ async function sendFeedback(row, signal, btnElem) {
 // ---------------------------------------------------------
 // Profile Stats & My Songs
 // ---------------------------------------------------------
-async function refreshProfileStats() {
+// Debounce: at most one profile refresh per 3 seconds
+let _profileRefreshTimer = null;
+let _profileRefreshPending = false;
+
+async function _doRefreshProfileStats() {
+    _profileRefreshPending = false;
     try {
         const res = await fetch(`${API_BASE}/api/profile?user=${encodeURIComponent(currentUser)}`);
         const data = await res.json();
         profileDataCache = data.history || [];
 
+        // Pre-fill userTrackSignals map from profile active history
+        (data.history || []).forEach(ev => {
+            if (ev.signal) {
+                if (ev.row !== undefined && ev.row !== null && ev.row >= 0) {
+                    userTrackSignals[ev.row] = ev.signal;
+                }
+                if (ev.name && ev.artist) {
+                    const tk = getTrackKey(ev.name, ev.artist);
+                    userTrackSignals[tk] = ev.signal;
+                }
+            }
+        });
+
         document.getElementById('profileCardUser').innerText = currentUser;
         document.getElementById('topGenresList').innerText = data.top_genres.length ? data.top_genres.map(g => g[0]).join(', ') : 'None yet';
         document.getElementById('topArtistsList').innerText = data.top_artists.length ? data.top_artists.map(a => a[0]).join(', ') : 'None yet';
     } catch (err) { console.error(err); }
+}
+
+async function refreshProfileStats() {
+    // Debounce: coalesce rapid calls (e.g. multiple likes in quick succession)
+    // into at most one network request per 3 seconds.
+    if (_profileRefreshPending) return;
+    _profileRefreshPending = true;
+    clearTimeout(_profileRefreshTimer);
+    _profileRefreshTimer = setTimeout(_doRefreshProfileStats, 3000);
 }
 
 async function loadMySongs() {
@@ -1958,7 +2189,6 @@ function filterMySongs(filterType, btnElem) {
     let filtered = profileDataCache;
     if (filterType === 'like') filtered = profileDataCache.filter(t => t.signal === 'like');
     if (filterType === 'dislike') filtered = profileDataCache.filter(t => t.signal === 'dislike');
-    if (filterType === 'skip') filtered = profileDataCache.filter(t => t.signal === 'skip');
 
     const container = document.getElementById('mySongsList');
     if (!container) return;
@@ -1970,14 +2200,16 @@ function filterMySongs(filterType, btnElem) {
 
     let html = '<div class="my-songs-grid">';
     filtered.forEach((t, idx) => {
-        const signalLabel = t.signal === 'like' ? 'Liked' : t.signal === 'dislike' ? 'Disliked' : 'Skipped';
-        const signalClass = t.signal === 'like' ? 'signal-like' : t.signal === 'dislike' ? 'signal-dislike' : 'signal-skip';
-        const signalIcon = t.signal === 'like' ? SVG_ICONS.like : t.signal === 'dislike' ? SVG_ICONS.dislike : SVG_ICONS.skip;
+        const signalLabel = t.signal === 'like' ? 'Liked' : 'Disliked';
+        const signalClass = t.signal === 'like' ? 'signal-like' : 'signal-dislike';
+        const signalIcon = t.signal === 'like' ? SVG_ICONS.like : SVG_ICONS.dislike;
+
+        const artHtml = t.deezer_album_art ? `<img src="${t.deezer_album_art}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : '🎵';
 
         html += `
         <div class="track-card my-song-card" id="card-h-${t.row}" onclick="selectTrackForInsights(${t.row}, '${escapeJs(t.name)}', '${escapeJs(t.artist)}', this)">
             <div class="track-info-side">
-                <div class="cover-art-box enrich-art" id="art-h-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}">🎵</div>
+                <div class="cover-art-box enrich-art" id="art-h-${t.row}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}">${artHtml}</div>
                 <div class="track-details">
                     <div class="track-name">${t.name}</div>
                     <div class="track-artist" onclick="event.stopPropagation();openArtistPage('${escapeJs(t.artist)}')">${t.artist} ${t.year ? `· <span style="color:var(--text-dim);">${t.year}</span>` : ''}</div>
@@ -1991,7 +2223,7 @@ function filterMySongs(filterType, btnElem) {
                 <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${t.name.replace(/'/g, "\\'")}', '${t.artist.replace(/'/g, "\\'")}')">${SVG_ICONS.explore} Explore</button>
             </div>
         </div>`;
-        setTimeout(() => loadTrackEnrichment(t.name, t.artist, `enrich-h-${t.row}`, t.row), idx * 60);
+        queueTrackEnrichment(t.name, t.artist, t.row, t);
     });
     html += '</div>';
     container.innerHTML = html;
@@ -2051,7 +2283,14 @@ window.onload = () => {
     loadUsers();
     refreshProfileStats();
     loadHomePage();
-    
-    // Periodically bind horizontal scroll handlers to newly rendered carousels
-    setInterval(enableAllHorizontalScrolls, 500);
+
+    // Use MutationObserver instead of setInterval polling to bind scroll handlers.
+    // This fires only when DOM actually changes, saving ~500ms CPU cycles/second.
+    const _scrollObserver = new MutationObserver(() => {
+        enableAllHorizontalScrolls();
+    });
+    const _mainContent = document.querySelector('.main-content') || document.body;
+    _scrollObserver.observe(_mainContent, { childList: true, subtree: true });
+    // Run once on load in case elements already exist
+    enableAllHorizontalScrolls();
 };

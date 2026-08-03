@@ -1300,22 +1300,10 @@ body.right-collapsed-body .sidebar-reopen-tab {
 }
 
 .btn-act.dislike.active-dislike {
-    background: var(--accent-red);
+    background: #f43f5e;
     color: #ffffff;
     font-weight: 800;
     box-shadow: 0 0 12px rgba(244, 63, 94, 0.4);
-}
-
-.btn-act.skip:hover {
-    background: rgba(245, 158, 11, 0.2);
-    color: var(--accent-amber);
-}
-
-.btn-act.skip.active-skip {
-    background: var(--accent-amber);
-    color: #000000;
-    font-weight: 800;
-    box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
 }
 
 .btn-act.explore:hover {

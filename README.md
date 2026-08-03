@@ -191,6 +191,56 @@ tests/                           Pytest unit test suite (16 test cases)
 
 ---
 
+## 🚢 Deployment & Cache Management
+
+SoundVector uses a **multi-layer cache-busting system** to ensure every user gets the correct UI after a new build is pushed, with zero manual browser cache clearing required.
+
+### How It Works
+
+| Layer | Mechanism | Effect |
+|---|---|---|
+| **HTML** | `Cache-Control: no-store` on `index.html` | Browser always fetches a fresh HTML shell |
+| **JS / CSS** | Version query string (`?v=2.0`) in `<script>` and `<link>` tags | Browser fetches new assets when version changes |
+| **localStorage** | `BUILD_VERSION` constant checked on every page load | Stale session state cleared automatically |
+| **sessionStorage** | Cleared entirely on version mismatch | No stale enrichment or search state persists |
+
+### Pushing a New Build
+
+When you update `script.js`, `style.css`, or any backend logic and need to force a full refresh for all users:
+
+**Step 1 — Bump the build version in `script.js`:**
+```js
+// src/static/script.js, line 6
+const BUILD_VERSION = '2.1';  // ← increment this
+```
+
+**Step 2 — Bump the asset version strings in `index.html`:**
+```html
+<!-- src/static/index.html -->
+<link rel="stylesheet" href="style.css?v=2.1">   <!-- ← match BUILD_VERSION -->
+<script src="script.js?v=2.1"></script>            <!-- ← match BUILD_VERSION -->
+```
+
+**Step 3 — Restart the server:**
+```bash
+python3 backend/app.py --web
+```
+
+### What Gets Cleared vs. Preserved on Upgrade
+
+| Data | Cleared? | Reason |
+|---|---|---|
+| Stale enrichment / search cache in browser | ✅ Yes | sessionStorage cleared |
+| Old UI state, cached panels | ✅ Yes | sessionStorage cleared |
+| All `soundvector_*` localStorage keys | ✅ Yes | Version mismatch wipe |
+| **User login** (`soundvector_user`) | ❌ Preserved | Re-persisted after wipe |
+
+> [!NOTE]
+> The version check is an **IIFE** that runs synchronously before any app code, so there is zero risk of stale state leaking into any module or component.
+
+---
+
 ## 📄 License & Credits
 
 Built as part of the **AI 110 Module 3 Music Recommender Project**. Developed by **Yash & Roop**.
+
