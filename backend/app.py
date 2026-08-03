@@ -979,7 +979,7 @@ class RAGDJ:
         for lang in ["telugu", "hindi", "tamil", "punjabi", "spanish", "korean", "japanese", "kannada", "malayalam", "marathi", "bengali"]:
             if lang in p_low:
                 lang_name = lang.capitalize()
-                lang_directive = f"\nCRITICAL LANGUAGE DIRECTIVE: The user specifically requested {lang_name} music. ALL track search queries in 'specific_tracks' MUST BE REAL, FAMOUS {lang_name} LANGUAGE SONGS BY {lang_name} ARTISTS/COMPOSERS. DO NOT output English, Hindi (unless requested), or any non-{lang_name} tracks under any circumstances!"
+                lang_directive = f"\nCRITICAL LANGUAGE DIRECTIVE: The user requested {lang_name} music. You MUST ONLY return authentic {lang_name} songs by {lang_name} artists. If you return ANY songs in other languages (like English or Hindi), the system will break. ONLY output genuine {lang_name} tracks."
                 break
 
         return (
@@ -2059,12 +2059,25 @@ async def api_search(q: str = ""):
             )
             if live_hits:
                 existing_keys = {f"{(r.get('name') or '').lower().strip()}||{(r.get('artist') or '').lower().strip()}" for r in results}
-                for hit in reversed(live_hits):
+                valid_live = []
+                for hit in live_hits:
                     hk = f"{(hit.get('name') or '').lower().strip()}||{(hit.get('artist') or '').lower().strip()}"
                     if hk not in existing_keys:
-                        results.insert(0, hit)
-                        existing_keys.add(hk)
-        except Exception:
+                        # Validate the live hit isn't just garbage fallback
+                        combo = f"{hit.get('name', '')} {hit.get('artist', '')}".lower()
+                        clean_q = _clean_search_query(q).lower()
+                        score = fuzz.token_set_ratio(clean_q, combo)
+                        if score >= 60:
+                            hit["match"] = float(score)
+                            valid_live.append(hit)
+                            existing_keys.add(hk)
+                
+                # Combine and sort by match score to ensure exact matches stay on top
+                all_results = results + valid_live
+                all_results.sort(key=lambda x: x.get("match", 0.0), reverse=True)
+                results = all_results
+        except Exception as e:
+            print(f"[Search API] Error: {e}")
             matching_albums = []
 
     return {
@@ -2456,42 +2469,35 @@ async def api_playlist_gen(req: PlaylistGenRequest):
 
     track_cards = []
     seen_keys = set()
+    
+    import asyncio
 
-    # Check if a specific language is requested
-    detected_lang = None
-    for l_kw in ["telugu", "hindi", "tamil", "punjabi", "spanish", "korean", "japanese", "kannada", "malayalam", "marathi", "bengali"]:
-        if l_kw in p_lower:
-            detected_lang = l_kw
-            break
+    def _fetch_track_sync(q_str):
+        if not q_str or not isinstance(q_str, str):
+            return None
+        hits = engine.search(q_str, limit=1)
+        if hits:
+            return engine.track_card(hits[0]["row"])
+        live_hits = search_live_apis(q_str, limit=1)
+        if live_hits:
+            return live_hits[0]
+        return None
 
     specific_queries = gen_params.get("specific_tracks", []) if gen_params else []
     if specific_queries and isinstance(specific_queries, list):
-        for q_str in specific_queries[:count + 5]:
-            if not q_str or not isinstance(q_str, str):
+        # Fetch tracks concurrently for speed
+        loop = asyncio.get_event_loop()
+        tasks = [
+            loop.run_in_executor(None, _fetch_track_sync, q_str)
+            for q_str in specific_queries[:count + 5] if isinstance(q_str, str) and q_str
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for found_card in results:
+            if isinstance(found_card, Exception) or not found_card:
                 continue
-            if detected_lang and detected_lang not in q_str.lower():
-                q_str_search = f"{q_str} {detected_lang}"
-            else:
-                q_str_search = q_str
-
-            found_card = None
-            hits = engine.search(q_str_search, limit=1)
-            if hits:
-                h = hits[0]
-                k = f"{(h.get('name') or '').lower().strip()}||{(h.get('artist') or '').lower().strip()}"
-                if k not in seen_keys:
-                    found_card = engine.track_card(h["row"])
-            
-            if not found_card:
-                live_hits = search_live_apis(q_str_search, limit=1)
-                if live_hits:
-                    lh = live_hits[0]
-                    k = f"{(lh.get('name') or '').lower().strip()}||{(lh.get('artist') or '').lower().strip()}"
-                    if k not in seen_keys:
-                        found_card = lh
-
-            if found_card:
-                k = f"{(found_card.get('name') or '').lower().strip()}||{(found_card.get('artist') or '').lower().strip()}"
+            k = f"{(found_card.get('name') or '').lower().strip()}||{(found_card.get('artist') or '').lower().strip()}"
+            if k not in seen_keys:
                 seen_keys.add(k)
                 track_cards.append(found_card)
                 if len(track_cards) >= count:
