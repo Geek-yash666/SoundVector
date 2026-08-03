@@ -2281,12 +2281,14 @@ body {
     align-items: center;
     justify-content: center;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.3s ease;
     padding: 20px;
 }
 
 .modal-overlay.open {
     opacity: 1;
+    pointer-events: auto;
 }
 
 .modal-box {
