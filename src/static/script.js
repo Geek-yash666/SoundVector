@@ -749,6 +749,11 @@ function selectBrowseCategory(catId, catTitle) {
 // ---------------------------------------------------------
 // Core Recommendation Execution
 // ---------------------------------------------------------
+let currentOffset = 0;
+const currentLimit = 15;
+let isFetchingMore = false;
+let lastSearchParams = null;
+
 async function executeSearch(query, forcedType = null, seedTrack = null) {
     const searchType = forcedType || currentSearchType;
     document.getElementById('recList').innerHTML = `
@@ -757,11 +762,14 @@ async function executeSearch(query, forcedType = null, seedTrack = null) {
             <div>Searching for "${query}"...</div>
         </div>`;
 
+    lastSearchParams = { query, searchType, seedTrack };
+    currentOffset = 0;
+    
     try {
         const res = await fetch(`${API_BASE}/api/recommend`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, mode: currentMode, user: currentUser, search_type: searchType, seed_track: seedTrack })
+            body: JSON.stringify({ query, mode: currentMode, user: currentUser, search_type: searchType, seed_track: seedTrack, limit: currentLimit, offset: currentOffset })
         });
         const data = await res.json();
         currentRecData = data;
@@ -819,6 +827,7 @@ function renderMainData(data) {
     }
 
     // Track Cards
+    html += `<div id="trackCardsContainer">`;
     data.recs.forEach((r, idx) => {
         const sigs = r.signals || {};
         const activeSig = userTrackSignals[r.row] || '';
@@ -849,8 +858,91 @@ function renderMainData(data) {
         // Lazy-load enrichment for each rec card
         setTimeout(() => loadTrackEnrichment(r.name, r.artist, `enrich-${r.row}`, r.row), idx * 80);
     });
+    html += `</div>`;
+    
+    html += `<button id="btn-show-more" class="btn-primary" style="margin-top:20px;width:100%" onclick="loadMoreRecommendations()">Show More Tracks</button>`;
 
     document.getElementById('recList').innerHTML = html;
+}
+
+async function loadMoreRecommendations() {
+    if (isFetchingMore || !lastSearchParams) return;
+    isFetchingMore = true;
+    
+    const btn = document.getElementById('btn-show-more');
+    if (btn) btn.innerText = 'Loading...';
+    
+    currentOffset += currentLimit;
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/recommend`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                query: lastSearchParams.query, 
+                mode: currentMode, 
+                user: currentUser, 
+                search_type: lastSearchParams.searchType, 
+                seed_track: lastSearchParams.seedTrack,
+                limit: currentLimit,
+                offset: currentOffset
+            })
+        });
+        const data = await res.json();
+        
+        const container = document.getElementById('trackCardsContainer');
+        if (container && data.recs && data.recs.length > 0) {
+            let appendHtml = '';
+            data.recs.forEach((r, idx) => {
+                const globalIdx = currentOffset + idx;
+                const sigs = r.signals || {};
+                const activeSig = userTrackSignals[r.row] || '';
+                appendHtml += `
+                <div class="track-card" id="card-${r.row}" onclick="selectTrackForInsights(${r.row}, '${escapeJs(r.name)}', '${escapeJs(r.artist)}', this)">
+                    <div class="track-info-side">
+                        <div class="cover-art-box enrich-art" id="art-${r.row}" data-track-key="${escapeAttr(getTrackKey(r.name, r.artist))}">🎵</div>
+                        <div class="track-details">
+                            <div class="track-name">${globalIdx + 1}. ${r.name}</div>
+                            <div class="track-artist" onclick="event.stopPropagation();openArtistPage('${escapeJs(r.artist)}')">${r.artist} ${r.year ? `· <span style="color:var(--text-dim);">${r.year}</span>` : ''}</div>
+                            <div class="tags-list">
+                                ${sigs.embed ? `<span class="signal-badge">embed ${sigs.embed.toFixed(2)}</span>` : ''}
+                                ${sigs.audio ? `<span class="signal-badge">audio ${sigs.audio.toFixed(2)}</span>` : ''}
+                                ${sigs.genre ? `<span class="signal-badge">genre ${sigs.genre.toFixed(2)}</span>` : ''}
+                            </div>
+                            <div class="listen-on-row" id="enrich-${r.row}" data-track-key="${escapeAttr(getTrackKey(r.name, r.artist))}"></div>
+                        </div>
+                    </div>
+                    <div class="track-action-side">
+                        <div class="score-badge">${(r.score * 100).toFixed(1)}%</div>
+                        <div class="action-buttons">
+                            <button class="btn-act like ${activeSig === 'like' ? 'active-like' : ''}" onclick="event.stopPropagation();sendFeedback(${r.row}, 'like', this)">${SVG_ICONS.like}</button>
+                            <button class="btn-act dislike ${activeSig === 'dislike' ? 'active-dislike' : ''}" onclick="event.stopPropagation();sendFeedback(${r.row}, 'dislike', this)">${SVG_ICONS.dislike}</button>
+                            <button class="btn-act explore" onclick="event.stopPropagation();selectDropdownItem('${escapeJs(r.name)}', '${escapeJs(r.artist)}')">${SVG_ICONS.explore} Explore</button>
+                        </div>
+                    </div>
+                </div>`;
+                setTimeout(() => loadTrackEnrichment(r.name, r.artist, `enrich-${r.row}`, r.row), idx * 80);
+            });
+            container.insertAdjacentHTML('beforeend', appendHtml);
+        }
+        
+        if (currentRecData && currentRecData.recs && data.recs) {
+            currentRecData.recs.push(...data.recs);
+        }
+        
+        if (btn) {
+            if (!data.recs || data.recs.length === 0) {
+                btn.style.display = 'none';
+            } else {
+                btn.innerText = 'Show More Tracks';
+            }
+        }
+    } catch (err) {
+        console.error("Failed to load more recommendations", err);
+        if (btn) btn.innerText = 'Show More Tracks';
+    }
+    
+    isFetchingMore = false;
 }
 
 function animateMeter(labelId, fillId, value) {

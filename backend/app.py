@@ -72,6 +72,8 @@ class RecommendRequest(BaseModel):
     user: str = "default"
     search_type: str = "auto"
     seed_track: Optional[dict] = None
+    limit: int = 15
+    offset: int = 0
 
 
 class AIIntelRequest(BaseModel):
@@ -536,6 +538,8 @@ class RecommendationEngine:
             for pos in np.argsort(-base):
                 if len(picked) >= k:
                     break
+                if strict_genre and tg and base[pos] <= 0:
+                    continue
                 r = int(cand[pos])
                 if r in excluded:
                     continue
@@ -993,7 +997,7 @@ class RAGDJ:
             "1. Output ONLY valid JSON, no markdown formatting.\n"
             "2. 'playlist_name' should be catchy and creative.\n"
             "3. 'description' should be a sleek 1-sentence summary.\n"
-            "4. 'specific_tracks' MUST be an array of 12-20 specific famous song titles with artist names (e.g. [\"Song Name Artist Name\", ...]) that PERFECTLY match the user request."
+            "4. 'specific_tracks' MUST be an array of 12-20 specific famous song objects (e.g. [{\"name\": \"Song Name\", \"artist\": \"Artist Name\"}, ...]) that PERFECTLY match the user request."
             f"{lang_directive}\n\n"
             f"User Request: \"{user_prompt}\"\n"
             f"Tracks Requested: {count}\n\n"
@@ -1002,7 +1006,7 @@ class RAGDJ:
             '  "playlist_name": "Creative Playlist Title",\n'
             '  "description": "1-sentence playlist summary",\n'
             '  "genres": ["genre1", "genre2"],\n'
-            '  "specific_tracks": ["Track Title 1 Artist 1", "Track Title 2 Artist 2"]\n'
+            '  "specific_tracks": [{"name": "Track Title 1", "artist": "Artist 1"}]\n'
             '}'
         )
 
@@ -2477,11 +2481,12 @@ async def api_recommend(req: RecommendRequest):
 
     header, recs, blurb, ground, facts, intel = safe_run_pipeline(
         req.query, engine, mood_model, dj, checker, profile, store,
-        mode=req.mode, search_type=req.search_type, seed_track=req.seed_track
+        mode=req.mode, search_type=req.search_type, seed_track=req.seed_track,
+        k=req.limit + req.offset
     )
     return {
         "header": header,
-        "recs": recs,
+        "recs": recs[req.offset : req.offset + req.limit],
         "blurb": blurb,
         "grounded": ground,
         "facts": facts,
@@ -2529,6 +2534,9 @@ async def api_playlist_gen(req: PlaylistGenRequest):
             m = re.search(r"\{.*\}", text, re.DOTALL)
             if m:
                 gen_params = json.loads(m.group(0))
+                print("\n================ [LLM PLAYLIST RESPONSE] ================")
+                print(json.dumps(gen_params, indent=2))
+                print("=========================================================\n")
         except Exception as e:
             print(f"[Playlist Gen] Gemini failed: {e}")
 
@@ -2551,15 +2559,56 @@ async def api_playlist_gen(req: PlaylistGenRequest):
     
     import asyncio
 
-    def _fetch_track_sync(q_str):
-        if not q_str or not isinstance(q_str, str):
+    def _fetch_track_sync(q_obj):
+        if not q_obj:
             return None
+        
+        # Parse dict or string
+        if isinstance(q_obj, dict):
+            tname = q_obj.get("name", "")
+            aname = q_obj.get("artist", "")
+            q_str = f"{tname} {aname}".strip()
+        elif isinstance(q_obj, str):
+            tname = q_obj
+            aname = ""
+            q_str = q_obj
+        else:
+            return None
+            
         hits = engine.search(q_str, limit=1)
-        if hits:
+        if hits and hits[0].get("match", 0) > 85.0:
             return engine.track_card(hits[0]["row"])
-        live_hits = search_live_apis(q_str, limit=1)
+            
+        # Fallback to Live API
+        # 1. Try full query (Track + Artist) first
+        live_hits = search_live_apis(q_str, limit=5)
         if live_hits:
-            return live_hits[0]
+            if not aname:
+                return live_hits[0]
+            from rapidfuzz import fuzz
+            for lh in live_hits:
+                hit_art = (lh.get("artist") or "").lower()
+                hit_title = (lh.get("name") or "").lower()
+                art_score = fuzz.token_set_ratio(aname.lower(), hit_art)
+                title_score = fuzz.token_set_ratio(tname.lower(), hit_title)
+                if art_score > 35 and title_score > 30:
+                    return lh
+
+        # 2. Try Track Name only
+        if tname and tname != q_str:
+            live_hits = search_live_apis(tname, limit=5)
+            if live_hits:
+                if not aname:
+                    return live_hits[0]
+                from rapidfuzz import fuzz
+                for lh in live_hits:
+                    hit_art = (lh.get("artist") or "").lower()
+                    hit_title = (lh.get("name") or "").lower()
+                    art_score = fuzz.token_set_ratio(aname.lower(), hit_art)
+                    title_score = fuzz.token_set_ratio(tname.lower(), hit_title)
+                    if art_score > 35 and title_score > 30:
+                        return lh
+
         return None
 
     specific_queries = gen_params.get("specific_tracks", []) if gen_params else []
@@ -2567,8 +2616,8 @@ async def api_playlist_gen(req: PlaylistGenRequest):
         # Fetch tracks concurrently for speed
         loop = asyncio.get_event_loop()
         tasks = [
-            loop.run_in_executor(None, _fetch_track_sync, q_str)
-            for q_str in specific_queries[:count + 5] if isinstance(q_str, str) and q_str
+            loop.run_in_executor(None, _fetch_track_sync, q_obj)
+            for q_obj in specific_queries[:count + 5] if q_obj
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -2582,20 +2631,7 @@ async def api_playlist_gen(req: PlaylistGenRequest):
                 if len(track_cards) >= count:
                     break
 
-    if len(track_cards) < count:
-        try:
-            live_items = search_live_apis(prompt_clean, limit=count)
-            if live_items:
-                for item in live_items:
-                    k = f"{(item.get('name') or '').lower().strip()}||{(item.get('artist') or '').lower().strip()}"
-                    if k not in seen_keys:
-                        seen_keys.add(k)
-                        track_cards.append(item)
-                        if len(track_cards) >= count:
-                            break
-        except Exception:
-            pass
-
+    # Fallback to vector search if LLM failed to provide enough tracks
     if len(track_cards) < count:
         t = mood_model.transform(prompt_clean)
         tg = {BASE_GENRE_MAP.get(tok, tok) for tok in t["matched_tokens"]}
