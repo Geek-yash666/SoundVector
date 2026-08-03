@@ -1076,15 +1076,19 @@ class ProfileStore:
         self.use_hf = False
         self.fs = None
         
-        if os.environ.get("HF_TOKEN") or HAS_SPACES:
+        token = os.environ.get("HF_TOKEN")
+        if self.bucket_url and (token or HAS_SPACES):
             try:
                 from huggingface_hub import HfFileSystem
-                self.fs = HfFileSystem()
-                self.fs.ls(self.bucket_url)
+                self.fs = HfFileSystem(token=token)
+                try:
+                    self.fs.ls(self.bucket_url)
+                except Exception:
+                    pass
                 self.use_hf = True
-                print(f"✅ Connected to HF Storage Bucket: {self.bucket_url}")
+                print(f"✅ Connected to HF Storage: {self.bucket_url}")
             except Exception as e:
-                print(f"⚠️ Could not access HF Bucket (maybe no token): {e}. Falling back to local storage.")
+                print(f"⚠️ Could not access HF Storage ({self.bucket_url}): {e}. Falling back to local storage.")
                 self.use_hf = False
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
