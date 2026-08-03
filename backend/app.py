@@ -1072,53 +1072,38 @@ SHORT_TERM_DECAY = 0.6
 class ProfileStore:
     def __init__(self, engine: RecommendationEngine, profiles_dir: str = "profiles"):
         self.engine = engine
-        self.bucket_url = os.environ.get("HF_BUCKET_URL")
-        self.use_hf = False
         self.fs = None
-        
-        token = os.environ.get("HF_TOKEN")
-        if self.bucket_url and (token or HAS_SPACES):
-            try:
-                from huggingface_hub import HfFileSystem
-                self.fs = HfFileSystem(token=token)
-                try:
-                    self.fs.ls(self.bucket_url)
-                except Exception:
-                    pass
-                self.use_hf = True
-                print(f"✅ Connected to HF Storage: {self.bucket_url}")
-            except Exception as e:
-                print(f"⚠️ Could not access HF Storage ({self.bucket_url}): {e}. Falling back to local storage.")
-                self.use_hf = False
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.local_dir = os.path.normpath(os.path.join(script_dir, "..", profiles_dir))
-        
-        if not self.use_hf:
+
+        # HF Persistent Bucket Storage: when a bucket is attached to an HF Space it is
+        # automatically mounted at /data inside the container — use it as plain local I/O.
+        # No HfFileSystem / dataset-repo API required.
+        _data_mount = "/data"
+        if os.path.isdir(_data_mount) and os.access(_data_mount, os.W_OK):
+            self.dir = os.path.join(_data_mount, "profiles")
+            os.makedirs(self.dir, exist_ok=True)
+            print(f"✅ Using HF Bucket persistent storage at {self.dir}")
+        else:
             os.makedirs(self.local_dir, exist_ok=True)
             self.dir = self.local_dir
-        else:
-            self.dir = self.bucket_url
+            print(f"ℹ️ Using local profile storage at {self.dir}")
+
         self.dim = engine.embed_dim
 
     def _path(self, user: str) -> str:
         safe = "".join(c for c in user if c.isalnum() or c in "-_") or "default"
-        if self.use_hf:
-            return f"{self.dir}/{safe}.json"
         return os.path.join(self.dir, f"{safe}.json")
 
     def _events_path(self, user: str) -> str:
         safe = "".join(c for c in user if c.isalnum() or c in "-_") or "default"
-        if self.use_hf:
-            return f"{self.dir}/{safe}.events.jsonl"
         return os.path.join(self.dir, f"{safe}.events.jsonl")
 
     def load(self, user: str) -> dict:
         path = self._path(user)
-        exists = self.fs.exists(path) if self.use_hf else os.path.exists(path)
-        if exists:
-            open_func = self.fs.open if self.use_hf else open
-            with open_func(path, "r", encoding="utf-8") as f:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
                 p = json.load(f)
             p["short_term"] = None
             return p
@@ -1132,19 +1117,16 @@ class ProfileStore:
     def save(self, user: str, profile: dict):
         to_save = dict(profile)
         to_save["short_term"] = None
-        open_func = self.fs.open if self.use_hf else open
-        with open_func(self._path(user), "w", encoding="utf-8") as f:
+        with open(self._path(user), "w", encoding="utf-8") as f:
             json.dump(to_save, f)
 
     def delete_user(self, user: str):
         path = self._path(user)
         events_path = self._events_path(user)
-        if self.use_hf:
-            if self.fs.exists(path): self.fs.rm(path)
-            if self.fs.exists(events_path): self.fs.rm(events_path)
-        else:
-            if os.path.exists(path): os.remove(path)
-            if os.path.exists(events_path): os.remove(events_path)
+        if os.path.exists(path):
+            os.remove(path)
+        if os.path.exists(events_path):
+            os.remove(events_path)
 
     def vectors(self, profile: dict) -> dict:
         return {"long_term": profile.get("long_term"), "short_term": profile.get("short_term")}
@@ -1186,18 +1168,8 @@ class ProfileStore:
             event["context"] = context
             
         event_str = json.dumps(event) + "\n"
-        if self.use_hf:
-            # fsspec on HF Buckets doesn't support append ('a') easily, so read, append, rewrite
-            path = self._events_path(user)
-            existing = ""
-            if self.fs.exists(path):
-                with self.fs.open(path, "r", encoding="utf-8") as f:
-                    existing = f.read()
-            with self.fs.open(path, "w", encoding="utf-8") as f:
-                f.write(existing + event_str)
-        else:
-            with open(self._events_path(user), "a", encoding="utf-8") as f:
-                f.write(event_str)
+        with open(self._events_path(user), "a", encoding="utf-8") as f:
+            f.write(event_str)
 
     def top_genres(self, profile: dict, n: int = 3):
         return sorted(profile.get("genre_counts", {}).items(), key=lambda x: -x[1])[:n]
@@ -1206,14 +1178,6 @@ class ProfileStore:
         return sorted(profile.get("artist_counts", {}).items(), key=lambda x: -x[1])[:n]
 
     def list_profiles(self) -> List[str]:
-        if self.use_hf:
-            try:
-                files = self.fs.ls(self.dir)
-                users = [f["name"].split("/")[-1][:-5] for f in files if f["name"].endswith(".json") and not f["name"].endswith(".events.jsonl")]
-                return sorted(list(set(users)))
-            except Exception:
-                return []
-        
         if not os.path.exists(self.dir):
             return []
         users = []
