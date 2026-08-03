@@ -59,6 +59,16 @@ body {
     height: 100vh;
 }
 
+.content-area {
+    flex: 1;
+    overflow-y: auto;
+    transition: padding-bottom 0.3s ease;
+}
+
+body.has-player-bar .content-area {
+    padding-bottom: 85px;
+}
+
 /* ============================================
    TOP HEADER BAR
    ============================================ */
@@ -1416,6 +1426,11 @@ body.right-collapsed-body .sidebar-reopen-tab {
     gap: 14px;
     overflow-y: auto;
     border-left: 1px solid var(--border);
+    transition: padding-bottom 0.3s ease;
+}
+
+body.has-player-bar .dj-sidebar {
+    padding-bottom: 90px;
 }
 
 .dj-sidebar::-webkit-scrollbar {
@@ -2432,7 +2447,7 @@ body.right-collapsed-body .sidebar-reopen-tab {
     cursor: pointer;
     padding: 6px;
     border-radius: 50%;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
@@ -3139,6 +3154,10 @@ body.right-collapsed-body .sidebar-reopen-tab {
     }
 
     /* Mobile Bottom Navigation Bar */
+    .player-info-btn {
+        display: flex;
+    }
+
     .mobile-bottom-nav {
         display: flex;
         position: fixed;

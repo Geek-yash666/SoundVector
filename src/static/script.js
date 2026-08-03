@@ -1143,6 +1143,7 @@ function togglePreview(url, row, btn, trackName, artistName, coverArt) {
     currentAudio.play().then(() => {
         if (bar) {
             bar.classList.remove('hidden');
+            document.body.classList.add('has-player-bar');
             const nameEl = document.getElementById('playerTrackName');
             const artistEl = document.getElementById('playerArtistName');
             const thumbEl = document.getElementById('playerThumb');
@@ -1231,6 +1232,7 @@ function closePlayerBar() {
     });
     const bar = document.getElementById('globalPlayerBar');
     if (bar) bar.classList.add('hidden');
+    document.body.classList.remove('has-player-bar');
 }
 
 // ---------------------------------------------------------
