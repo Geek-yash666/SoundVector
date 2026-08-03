@@ -1956,6 +1956,12 @@ async def get_script():
     raise HTTPException(status_code=404, detail="script.js not found")
 
 
+@app.get("/favicon.ico")
+async def get_favicon():
+    svg_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#1db954" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v4M6 6v12M10 3v18M14 7v10M18 5v14M22 10v4"/></svg>'
+    return HTMLResponse(content=svg_icon, media_type="image/svg+xml")
+
+
 
 @app.get("/api/users")
 async def api_users():

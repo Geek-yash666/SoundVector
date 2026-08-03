@@ -93,20 +93,28 @@ function setSearchType(type) {
 // ---------------------------------------------------------
 function goHome() {
     currentView = 'home';
+    closeMobileInsights();
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.view-panel').forEach(v => v.classList.add('hidden'));
-    document.getElementById('navHome').classList.add('active');
+    const navH = document.getElementById('navHome');
+    if (navH) navH.classList.add('active');
+    const navHM = document.getElementById('navHomeMobile');
+    if (navHM) navHM.classList.add('active');
     document.getElementById('viewHome').classList.remove('hidden');
     loadHomePage();
 }
 
 function switchTab(tabId) {
     currentView = tabId;
+    closeMobileInsights();
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.view-panel').forEach(v => v.classList.add('hidden'));
 
     if (tabId === 'discover') {
-        document.getElementById('navDiscover').classList.add('active');
+        const navD = document.getElementById('navDiscover');
+        if (navD) navD.classList.add('active');
+        const navDM = document.getElementById('navDiscoverMobile');
+        if (navDM) navDM.classList.add('active');
         document.getElementById('viewDiscover').classList.remove('hidden');
         if (currentRecData && currentRecData.recs && currentRecData.recs.length > 0) {
             renderMainData(currentRecData);
@@ -119,13 +127,82 @@ function switchTab(tabId) {
         document.getElementById('viewArtist').classList.remove('hidden');
     } else if (tabId === 'album') {
         document.getElementById('viewAlbum').classList.remove('hidden');
+    } else if (tabId === 'playlist') {
+        document.getElementById('viewPlaylist').classList.remove('hidden');
     } else if (tabId === 'home') {
         goHome();
         return;
     } else {
-        document.getElementById('navMySongs').classList.add('active');
+        const navM = document.getElementById('navMySongs');
+        if (navM) navM.classList.add('active');
+        const navMM = document.getElementById('navMySongsMobile');
+        if (navMM) navMM.classList.add('active');
         document.getElementById('viewMySongs').classList.remove('hidden');
         loadMySongs();
+    }
+}
+
+// ---------------------------------------------------------
+// Sidebar Collapse / Expand
+// ---------------------------------------------------------
+function toggleLeftSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const mainBody = document.querySelector('.main-body');
+    if (!sidebar || !mainBody) return;
+    sidebar.classList.toggle('collapsed');
+    mainBody.classList.toggle('left-collapsed');
+}
+
+function toggleRightSidebar() {
+    const djSidebar = document.querySelector('.dj-sidebar');
+    const mainBody = document.querySelector('.main-body');
+    const reopenTab = document.getElementById('insightsReopenTab');
+    if (!djSidebar || !mainBody) return;
+
+    const isCollapsed = djSidebar.classList.toggle('collapsed');
+    mainBody.classList.toggle('right-collapsed', isCollapsed);
+    if (reopenTab) reopenTab.style.display = isCollapsed ? 'flex' : 'none';
+}
+
+function openMobileInsights() {
+    const modal = document.getElementById('mobileInsightsModal');
+    const body = document.getElementById('mobileInsightsBody');
+    if (!modal || !body) return;
+
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    const navIM = document.getElementById('navIntelMobile');
+    if (navIM) navIM.classList.add('active');
+
+    const profileBox = document.querySelector('.profile-box');
+    const djSidebar = document.querySelector('.dj-sidebar');
+
+    body.innerHTML = '';
+    if (profileBox) {
+        const profileClone = profileBox.cloneNode(true);
+        profileClone.style.marginBottom = '16px';
+        body.appendChild(profileClone);
+    }
+    if (djSidebar) {
+        const djClone = djSidebar.cloneNode(true);
+        djClone.style.display = 'flex';
+        djClone.style.flexDirection = 'column';
+        djClone.style.gap = '16px';
+        const hiddenPanels = djClone.querySelectorAll('.hidden');
+        hiddenPanels.forEach(hp => hp.classList.remove('hidden'));
+        body.appendChild(djClone);
+    }
+
+    modal.classList.remove('hidden');
+}
+
+function closeMobileInsights() {
+    const modal = document.getElementById('mobileInsightsModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function closeMobileInsightsOnBackdrop(e) {
+    if (e.target && e.target.id === 'mobileInsightsModal') {
+        closeMobileInsights();
     }
 }
 
@@ -233,7 +310,7 @@ if (deleteUserBtn) {
                 const data = await res.json();
                 showToast(data.detail || "Failed to delete profile.", "error");
             }
-        } catch(err) {
+        } catch (err) {
             console.error(err);
             showToast("Network error deleting profile.", "error");
         }
@@ -244,7 +321,7 @@ function onUserChanged() {
     if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
     const profileCardUser = document.getElementById('profileCardUser');
     if (profileCardUser) profileCardUser.innerText = currentUser;
-    
+
     refreshProfileStats();
     if (currentView === 'home') loadHomePage();
     if (currentView === 'mysongs') loadMySongs();
@@ -330,7 +407,7 @@ function renderSuggestions() {
         albumSuggestions.forEach(alb => {
             const artHtml = alb.cover_art ? `<img src="${alb.cover_art}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;">` : '💿';
             html += `
-            <div class="dropdown-album-card" onclick="openAlbumPage('${alb.title.replace(/'/g, "\\'")}', '${(alb.artist||'').replace(/'/g, "\\'")}', '${alb.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:8px;cursor:pointer;min-width:160px;max-width:220px;border:1px solid rgba(255,255,255,0.06);flex-shrink:0;">
+            <div class="dropdown-album-card" onclick="openAlbumPage('${alb.title.replace(/'/g, "\\'")}', '${(alb.artist || '').replace(/'/g, "\\'")}', '${alb.id}')" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:8px;cursor:pointer;min-width:160px;max-width:220px;border:1px solid rgba(255,255,255,0.06);flex-shrink:0;">
                 <div style="width:38px;height:38px;border-radius:6px;overflow:hidden;flex-shrink:0;background:#222;display:flex;align-items:center;justify-content:center;font-size:16px;">${artHtml}</div>
                 <div style="overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;text-align:left;">
                     <span style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;">${alb.title}</span>
@@ -704,7 +781,7 @@ function renderMainData(data) {
     // Target Seed Track Logic
     if (f.name && f.artist && f.artist !== "your vibe") {
         html += `<h2 style="font-size: 18px; font-weight: 800; margin-bottom: 14px; color: #fff;">Recommendations based on "${f.name}"</h2>`;
-        
+
         // Ensure the seed track is included at the top of the recommendations list
         // so that it gets all the like/dislike/skip action buttons
         const seedInRecs = data.recs.some(r => r.row === f.row || (r.name === f.name && r.artist === f.artist));
@@ -809,7 +886,8 @@ function renderIntelPanel(intel, backend, facts) {
         html += `<div class="intel-listen-if">${intel.listen_if}</div>`;
     }
 
-    document.getElementById('intelPanel').innerHTML = html;
+    const desktopIntel = document.getElementById('intelPanel');
+    if (desktopIntel) desktopIntel.innerHTML = html;
 }
 
 // ---------------------------------------------------------
@@ -820,32 +898,110 @@ async function selectTrackForInsights(row, trackName, artistName, cardElem) {
     document.querySelectorAll('.track-card.active-selected').forEach(c => c.classList.remove('active-selected'));
     if (cardElem) cardElem.classList.add('active-selected');
 
-    const intelPanel = document.getElementById('intelPanel');
-    if (intelPanel) {
-        intelPanel.innerHTML = `
-            <div class="loading-state" style="padding: 24px 12px;">
-                <div class="spinner" style="width:22px;height:22px;"></div>
-                <div style="font-size:12px;color:var(--text-secondary);">Generating insights for "${trackName}"...</div>
+    const isMobile = window.innerWidth <= 992;
+
+    if (isMobile) {
+        // On mobile, open the bottom sheet immediately with a loading state
+        const modal = document.getElementById('mobileInsightsModal');
+        const body = document.getElementById('mobileInsightsBody');
+        const sheetTitle = modal ? modal.querySelector('.sheet-header h3') : null;
+        if (sheetTitle) sheetTitle.textContent = `${trackName}`;
+        if (body) body.innerHTML = `
+            <div class="loading-state" style="padding:32px 0;">
+                <div class="spinner"></div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">Loading insights...</div>
             </div>`;
+        if (modal) modal.classList.remove('hidden');
+    } else {
+        const intelPanel = document.getElementById('intelPanel');
+        if (intelPanel) {
+            intelPanel.innerHTML = `
+                <div class="loading-state" style="padding: 24px 12px;">
+                    <div class="spinner" style="width:22px;height:22px;"></div>
+                    <div style="font-size:12px;color:var(--text-secondary);">Generating insights for "${trackName}"...</div>
+                </div>`;
+        }
     }
 
     try {
         const res = await fetch(`${API_BASE}/api/track_intel?row=${row}&track=${encodeURIComponent(trackName)}&artist=${encodeURIComponent(artistName)}`);
         const data = await res.json();
-        
-        const f = data.facts || {};
-        const audioPanel = document.getElementById('audioVectorPanel');
-        if (audioPanel) audioPanel.classList.remove('hidden');
-        animateMeter('mEnergy', 'fEnergy', f.energy || 0.5);
-        animateMeter('mValence', 'fValence', f.valence || 0.5);
-        animateMeter('mDance', 'fDance', f.danceability || 0.5);
-        document.getElementById('mTempo').innerText = `${f.tempo_bpm || 120} BPM`;
-        document.getElementById('fTempo').style.width = `${Math.min(100, (f.tempo_bpm || 120) / 200 * 100)}%`;
 
-        renderIntelPanel(data.intel, data.backend, data.facts);
+        const f = data.facts || {};
+
+        if (isMobile) {
+            openMobileTrackInsights(trackName, artistName, data, row);
+        } else {
+            const audioPanel = document.getElementById('audioVectorPanel');
+            if (audioPanel) audioPanel.classList.remove('hidden');
+            animateMeter('mEnergy', 'fEnergy', f.energy || 0.5);
+            animateMeter('mValence', 'fValence', f.valence || 0.5);
+            animateMeter('mDance', 'fDance', f.danceability || 0.5);
+            document.getElementById('mTempo').innerText = `${f.tempo_bpm || 120} BPM`;
+            document.getElementById('fTempo').style.width = `${Math.min(100, (f.tempo_bpm || 120) / 200 * 100)}%`;
+            renderIntelPanel(data.intel, data.backend, data.facts);
+        }
     } catch (e) {
         console.error(e);
     }
+}
+
+function openMobileTrackInsights(trackName, artistName, data, row) {
+    const modal = document.getElementById('mobileInsightsModal');
+    const body = document.getElementById('mobileInsightsBody');
+    const sheetTitle = modal ? modal.querySelector('.sheet-header h3') : null;
+    if (!modal || !body) return;
+
+    if (sheetTitle) sheetTitle.textContent = trackName;
+    const intel = data.intel || {};
+    const f = data.facts || {};
+
+    const meterBar = (val) => `
+        <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-top:4px;">
+            <div style="height:100%;width:${Math.round((val || 0) * 100)}%;background:var(--accent-green);border-radius:2px;transition:width 0.5s ease;"></div>
+        </div>`;
+
+    let html = '';
+
+    // AI Insight headline
+    if (intel.headline || intel.reasoning) {
+        html += `
+        <div style="padding:14px 0 10px;border-bottom:1px solid var(--border);">
+            ${data.backend && data.backend.includes('gemini') ? `<span style="font-size:10px;font-weight:700;color:var(--accent-green);letter-spacing:0.5px;text-transform:uppercase;display:inline-flex;align-items:center;gap:4px;margin-bottom:6px;"><svg viewBox='0 0 24 24' width='10' height='10' fill='currentColor'><path d='M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z'/></svg>AI Insight</span><br>` : ''}
+            <div style="font-size:15px;font-weight:700;color:#fff;line-height:1.4;">${intel.headline || ''}</div>
+            ${intel.reasoning ? `<div style="font-size:13px;color:var(--text-secondary);margin-top:6px;line-height:1.5;">${intel.reasoning}</div>` : ''}
+            ${intel.listen_if ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px;font-style:italic;">${intel.listen_if}</div>` : ''}
+        </div>`;
+    }
+
+    // Audio meters
+    if (f.energy !== undefined) {
+        html += `<div style="padding:12px 0;border-bottom:1px solid var(--border);">
+            <div style="font-size:11px;font-weight:700;color:var(--text-dim);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:10px;">Audio Attributes</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div><div style="font-size:12px;color:var(--text-secondary);display:flex;justify-content:space-between;"><span>Energy</span><span style="color:#fff;font-weight:600;">${(f.energy || 0).toFixed(2)}</span></div>${meterBar(f.energy)}</div>
+                <div><div style="font-size:12px;color:var(--text-secondary);display:flex;justify-content:space-between;"><span>Mood</span><span style="color:#fff;font-weight:600;">${(f.valence || 0).toFixed(2)}</span></div>${meterBar(f.valence)}</div>
+                <div><div style="font-size:12px;color:var(--text-secondary);display:flex;justify-content:space-between;"><span>Dance</span><span style="color:#fff;font-weight:600;">${(f.danceability || 0).toFixed(2)}</span></div>${meterBar(f.danceability)}</div>
+                <div><div style="font-size:12px;color:var(--text-secondary);display:flex;justify-content:space-between;"><span>Tempo</span><span style="color:#fff;font-weight:600;">${f.tempo_bpm || 120} BPM</span></div>${meterBar(Math.min(1, (f.tempo_bpm || 120) / 200))}</div>
+            </div>
+        </div>`;
+    }
+
+    // Mood tags
+    if (intel.mood_tags && intel.mood_tags.length) {
+        html += `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">${intel.mood_tags.map(t => `<span class="genre-badge">${t}</span>`).join('')}</div>
+        </div>`;
+    }
+
+    // Quick actions
+    html += `<div style="padding:12px 0;display:flex;gap:8px;">
+        <button class="btn-primary" onclick="closeMobileInsights();selectDropdownItem('${escapeJs(trackName)}','${escapeJs(artistName)}')" style="flex:1;padding:10px;font-size:13px;border-radius:8px;cursor:pointer;font-weight:700;">Explore Similar</button>
+        <button onclick="closeMobileInsights();openArtistPage('${escapeJs(artistName)}')" style="flex:1;padding:10px;font-size:13px;border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:#fff;font-weight:600;">Artist Page</button>
+    </div>`;
+
+    body.innerHTML = html;
+    modal.classList.remove('hidden');
 }
 
 // ---------------------------------------------------------
@@ -867,19 +1023,21 @@ async function loadTrackEnrichment(trackName, artistName, containerId, row) {
 
     let btns = '';
     if (data.deezer_link) {
-        btns += `<a class="listen-btn deezer-btn" href="${data.deezer_link}" target="_blank" onclick="event.stopPropagation();" title="Open on Deezer">${SVG_ICONS.deezer} Deezer</a>`;
+        btns += `<a class="listen-btn deezer-btn" href="${data.deezer_link}" target="_blank" onclick="event.stopPropagation();" title="Open on Deezer">${SVG_ICONS.deezer} <span>Deezer</span></a>`;
     }
     if (data.youtube_music_url) {
-        btns += `<a class="listen-btn yt-btn" href="${data.youtube_music_url}" target="_blank" onclick="event.stopPropagation();" title="Search on YouTube Music">${SVG_ICONS.youtube} YT Music</a>`;
+        btns += `<a class="listen-btn yt-btn" href="${data.youtube_music_url}" target="_blank" onclick="event.stopPropagation();" title="Search on YouTube Music">${SVG_ICONS.youtube} <span>YT Music</span></a>`;
     }
 
-    // Update ALL matching cover art elements in DOM with album art + Spotify-style play overlay
+    // Update ALL matching cover art elements in DOM with album art + play overlay
     if (data.deezer_album_art) {
         document.querySelectorAll('.enrich-art').forEach(artEl => {
             if (artEl.getAttribute('data-track-key') === cacheKey) {
                 let overlayHtml = '';
                 if (data.deezer_preview_url) {
-                    const safeUrl = data.deezer_preview_url.replace(/"/g, '&quot;');
+                    // Force HTTPS — iOS Safari blocks HTTP audio on HTTPS pages
+                    const httpsUrl = data.deezer_preview_url.replace(/^http:\/\//i, 'https://');
+                    const safeUrl = httpsUrl.replace(/"/g, '&quot;');
                     const safeName = (trackName || '').replace(/"/g, '&quot;');
                     const safeArtist = (artistName || '').replace(/"/g, '&quot;');
                     const safeArt = (data.deezer_album_art || '').replace(/"/g, '&quot;');
@@ -906,7 +1064,7 @@ async function loadTrackEnrichment(trackName, artistName, containerId, row) {
 function handlePreviewClick(btn) {
     const url = btn.getAttribute('data-preview-url');
     const row = btn.getAttribute('data-row');
-    
+
     let trackName = btn.getAttribute('data-track-name') || '';
     let artistName = btn.getAttribute('data-artist-name') || '';
     let coverArt = btn.getAttribute('data-album-art') || '';
@@ -964,7 +1122,11 @@ function togglePreview(url, row, btn, trackName, artistName, coverArt) {
         });
     }
 
-    currentAudio = new Audio(url);
+    currentAudio = new Audio();
+    currentAudio.preload = 'none';
+    currentAudio.crossOrigin = 'anonymous';
+    // Force HTTPS for mobile browser compatibility
+    currentAudio.src = url.replace(/^http:\/\//i, 'https://');
     currentPlayingUrl = url;
     currentPlayingRow = row;
     currentAudio.volume = 0.8;
@@ -978,7 +1140,7 @@ function togglePreview(url, row, btn, trackName, artistName, coverArt) {
             if (nameEl) nameEl.innerText = trackName || 'Audio Preview';
             if (artistEl) artistEl.innerText = artistName || 'SoundVector';
             if (thumbEl) thumbEl.innerHTML = coverArt ? `<img src="${coverArt}">` : '🎵';
-            
+
             updatePlayerBarState(true);
 
             playerInterval = setInterval(() => {
@@ -997,8 +1159,20 @@ function togglePreview(url, row, btn, trackName, artistName, coverArt) {
             }, 250);
         }
     }).catch(err => {
-        console.error('Audio play error:', err);
-        showToast('Preview audio blocked or unavailable', '⚠️');
+        const isNotSupported = err.name === 'NotSupportedError' || err.message.includes('no supported source');
+        const isNotAllowed = err.name === 'NotAllowedError';
+        if (isNotAllowed) {
+            showToast('Tap the play button to start preview', 'info');
+        } else if (isNotSupported) {
+            showToast('Preview unavailable for this track', 'info');
+        } else {
+            showToast('Preview could not load', 'info');
+        }
+        // Reset button state on failure
+        btn.innerHTML = SVG_ICONS.play;
+        btn.classList.remove('playing');
+        currentAudio = null;
+        currentPlayingUrl = null;
     });
 
     btn.innerHTML = SVG_ICONS.pause;
@@ -1018,7 +1192,7 @@ function togglePreview(url, row, btn, trackName, artistName, coverArt) {
 function updatePlayerBarState(isPlaying) {
     const playBtn = document.getElementById('playerPlayBtn');
     if (playBtn) {
-        playBtn.innerHTML = isPlaying 
+        playBtn.innerHTML = isPlaying
             ? `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`
             : `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
     }
@@ -1054,45 +1228,60 @@ function closePlayerBar() {
 // Playlist Generator Modal
 // ---------------------------------------------------------
 function openPlaylistModal() {
-    let modal = document.getElementById('playlistModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'playlistModal';
-        modal.className = 'modal-overlay';
-        modal.innerHTML = `
-            <div class="modal-box">
-                <div class="modal-header">
-                    <div class="modal-title">
-                        ${SVG_ICONS.playlist || ''}
-                        <span>AI Playlist Generator</span>
+    let widget = document.getElementById('playlistModal');
+    if (!widget) {
+        widget = document.createElement('div');
+        widget.id = 'playlistModal';
+        widget.className = 'ai-playlist-widget hidden';
+        widget.innerHTML = `
+            <div class="playlist-panel-header">
+                <div class="playlist-panel-title-group">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--accent-green)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                        <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+                    </svg>
+                    <div>
+                        <div class="playlist-panel-name">AI Playlist Curator</div>
+                        <div class="playlist-panel-sub">Describe a vibe, artist style, or mood</div>
                     </div>
-                    <button class="modal-close" onclick="closePlaylistModal()">✕</button>
                 </div>
-                <div class="modal-body">
-                    <p class="modal-hint">Describe a vibe, scenario, or mood. Gemini + SoundVector will craft a high-fidelity playlist of authentic hits.</p>
-                    <div class="modal-examples">
-                        <span class="example-chip" onclick="setPlaylistPrompt(this.textContent)">songs like believer</span>
-                        <span class="example-chip" onclick="setPlaylistPrompt(this.textContent)">bollywood energy songs</span>
-                        <span class="example-chip" onclick="setPlaylistPrompt(this.textContent)">telugu sleep songs recent</span>
-                        <span class="example-chip" onclick="setPlaylistPrompt(this.textContent)">late night coding lo-fi focus</span>
-                    </div>
-                    <textarea id="playlistPromptInput" class="modal-textarea" placeholder="e.g. songs like believer, bollywood hype songs..." rows="3"></textarea>
-                    <div class="modal-controls">
-                        <div class="track-count-wrap">
-                            <label>Tracks: <input type="number" id="playlistCountInput" value="15" min="5" max="30" class="count-input"></label>
+                <button class="playlist-panel-close" onclick="closePlaylistModal()">&times;</button>
+            </div>
+
+            <div class="playlist-panel-body">
+                <div class="prompt-examples-row">
+                    <span class="prompt-chip" onclick="setPlaylistPrompt('songs like believer')">songs like believer</span>
+                    <span class="prompt-chip" onclick="setPlaylistPrompt('bollywood energy hype')">bollywood energy hype</span>
+                    <span class="prompt-chip" onclick="setPlaylistPrompt('chill acoustic lo-fi focus')">chill acoustic focus</span>
+                    <span class="prompt-chip" onclick="setPlaylistPrompt('late night drive')">late night drive</span>
+                </div>
+
+                <div class="playlist-input-container">
+                    <textarea id="playlistPromptInput" class="playlist-textarea" placeholder="Describe a vibe (e.g., songs like believer, upbeat workout)..." rows="2"></textarea>
+                    <div class="playlist-controls-row">
+                        <div class="count-select-wrap">
+                            <label>Tracks: 
+                                <select id="playlistCountInput" class="count-select">
+                                    <option value="10">10 tracks</option>
+                                    <option value="15" selected>15 tracks</option>
+                                    <option value="20">20 tracks</option>
+                                    <option value="25">25 tracks</option>
+                                </select>
+                            </label>
                         </div>
                         <button class="btn-gen-playlist" id="genPlaylistBtn" onclick="generatePlaylist()">
-                            ${SVG_ICONS.sparkle || ''}
                             <span>Generate Playlist</span>
                         </button>
                     </div>
                 </div>
+
                 <div id="playlistResult" class="playlist-result hidden"></div>
             </div>`;
-        document.body.appendChild(modal);
+        document.body.appendChild(widget);
     }
-    modal.classList.remove('hidden');
-    setTimeout(() => modal.classList.add('open'), 10);
+
+    widget.classList.remove('hidden');
+    setTimeout(() => widget.classList.add('open'), 10);
 }
 
 function setPlaylistPrompt(text) {
@@ -1101,22 +1290,58 @@ function setPlaylistPrompt(text) {
 }
 
 function closePlaylistModal() {
-    const modal = document.getElementById('playlistModal');
-    if (modal) { modal.classList.remove('open'); setTimeout(() => modal.classList.add('hidden'), 300); }
+    const widget = document.getElementById('playlistModal');
+    if (widget) {
+        widget.classList.remove('open');
+        setTimeout(() => widget.classList.add('hidden'), 200);
+    }
+}
+
+function renderPlaylistView(data) {
+    const titleEl = document.getElementById('playlistTitle');
+    const metaEl = document.getElementById('playlistMeta');
+    const listEl = document.getElementById('playlistViewTracksList');
+
+    if (titleEl) titleEl.innerText = data.playlist_name || 'Curated Mix';
+    if (metaEl) metaEl.innerText = `${data.description || 'Custom Vibe Mix'} · ${(data.tracks || []).length} songs`;
+
+    if (!listEl) return;
+
+    let html = `<div style="display:flex;flex-direction:column;gap:8px;">`;
+    (data.tracks || []).forEach((t, i) => {
+        const artHtml = t.deezer_album_art ? `<img src="${t.deezer_album_art}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+        const trackKey = getTrackKey(t.name, t.artist);
+        html += `
+        <div class="artist-track-card" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;cursor:pointer;" onclick="selectDropdownItem('${escapeJs(t.name)}', '${escapeJs(t.artist)}')">
+            <span style="font-size:13px;font-weight:700;color:var(--text-dim);width:24px;text-align:center;">${i + 1}</span>
+            <div class="cover-art-box enrich-art" id="art-plv-${t.row || i}" data-track-key="${escapeAttr(trackKey)}">${artHtml}</div>
+            <div style="display:flex;flex-direction:column;align-items:flex-start;text-align:left;flex:1;min-width:0;">
+                <span style="font-size:14px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;">${t.name}</span>
+                <span onclick="event.stopPropagation();openArtistPage('${escapeJs(t.artist)}')" style="font-size:12px;color:var(--text-secondary);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;margin-top:2px;">${t.artist}</span>
+            </div>
+            <button class="btn-secondary" onclick="event.stopPropagation();selectDropdownItem('${escapeJs(t.name)}', '${escapeJs(t.artist)}')" style="padding:6px 14px;font-size:12px;border-radius:500px;">Explore</button>
+        </div>`;
+        setTimeout(() => loadTrackEnrichment(t.name, t.artist, `art-plv-${t.row || i}`, t.row || 0), i * 40);
+    });
+    html += `</div>`;
+    listEl.innerHTML = html;
 }
 
 async function generatePlaylist() {
     const prompt = (document.getElementById('playlistPromptInput') || {}).value || '';
     const count = parseInt((document.getElementById('playlistCountInput') || {}).value || 15);
-    if (!prompt.trim()) { showToast('Please describe a vibe first!', '⚠️'); return; }
+    if (!prompt.trim()) { showToast('Please enter a description or vibe first', 'info'); return; }
     if (playlistGenerating) return;
     playlistGenerating = true;
 
     const btn = document.getElementById('genPlaylistBtn');
-    if (btn) btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div> Generating...`;
+    if (btn) btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div> Curating...`;
 
     const result = document.getElementById('playlistResult');
-    if (result) { result.classList.remove('hidden'); result.innerHTML = `<div class="loading-state" style="padding:28px;"><div class="spinner"></div><div>Curating authentic playlist hits...</div></div>`; }
+    if (result) {
+        result.classList.remove('hidden');
+        result.innerHTML = `<div class="loading-state" style="padding:16px 0;"><div class="spinner"></div><div>Generating playlist...</div></div>`;
+    }
 
     try {
         const res = await fetch(`${API_BASE}/api/playlist_gen`, {
@@ -1125,42 +1350,23 @@ async function generatePlaylist() {
             body: JSON.stringify({ prompt, user: currentUser, count })
         });
         const data = await res.json();
+        renderPlaylistView(data);
+
         if (result) {
-            let html = `
-                <div class="playlist-header" style="display:flex;align-items:center;gap:16px;padding:16px;background:rgba(255,255,255,0.03);border-radius:12px;margin-bottom:16px;border:1px solid rgba(255,255,255,0.06);">
-                    <div class="playlist-icon-badge" style="width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg, rgba(29,185,84,0.2), rgba(16,185,129,0.1));display:flex;align-items:center;justify-content:center;color:#1db954;flex-shrink:0;">
-                        ${SVG_ICONS.playlist || '🎵'}
-                    </div>
-                    <div style="text-align:left;">
-                        <div class="playlist-name" style="font-size:16px;font-weight:700;color:#fff;">${data.playlist_name || 'SoundVector Mix'}</div>
-                        <div class="playlist-desc" style="font-size:12px;color:#a7a7a7;margin-top:2px;">${data.description || ''}</div>
-                        ${data.ai_generated ? '<div class="ai-badge-sm" style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#1db954;background:rgba(29,185,84,0.1);padding:2px 8px;border-radius:100px;margin-top:6px;font-weight:600;">✨ Gemini Curated</div>' : ''}
-                    </div>
-                </div>
-                <div class="playlist-tracks" style="display:flex;flex-direction:column;gap:8px;">`;
-            
-            (data.tracks || []).forEach((t, i) => {
-                const artHtml = t.deezer_album_art ? `<img src="${t.deezer_album_art}" style="width:34px;height:34px;object-fit:cover;border-radius:6px;">` : `<span style="font-size:14px;">🎵</span>`;
-                html += `
-                <div class="playlist-track-row" style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.04);">
-                    <span class="pt-num" style="font-size:12px;font-weight:600;color:#727272;width:20px;text-align:center;">${i + 1}</span>
-                    <div class="enrich-art" id="art-pl-${t.row || i}" data-track-key="${escapeAttr(getTrackKey(t.name, t.artist))}" style="width:34px;height:34px;border-radius:6px;background:#222;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">${artHtml}</div>
-                    <div style="display:flex;flex-direction:column;align-items:flex-start;text-align:left;flex:1;min-width:0;">
-                        <span class="pt-name" style="font-size:13px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;">${t.name}</span>
-                        <span class="pt-artist" onclick="closePlaylistModal();openArtistPage('${escapeJs(t.artist)}')" style="font-size:11px;color:#a7a7a7;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;">${t.artist}</span>
-                    </div>
-                    <button class="pt-explore btn-secondary" onclick="closePlaylistModal();selectDropdownItem('${escapeJs(t.name)}', '${escapeJs(t.artist)}')" style="padding:4px 10px;font-size:11px;border-radius:6px;">Explore</button>
+            result.innerHTML = `
+                <div style="display:flex;flex-direction:column;gap:10px;padding:12px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid var(--border);margin-top:10px;">
+                    <div style="font-size:14px;font-weight:700;color:#fff;">${data.playlist_name || 'Curated Mix'}</div>
+                    <div style="font-size:12px;color:var(--text-secondary);">${(data.tracks || []).length} songs curated for "${prompt}"</div>
+                    <button class="btn-primary" onclick="closePlaylistModal();switchTab('playlist');" style="padding:10px;font-size:13px;border-radius:8px;cursor:pointer;width:100%;font-weight:700;">View Playlist &rarr;</button>
                 </div>`;
-                setTimeout(() => loadTrackEnrichment(t.name, t.artist, `art-pl-${t.row || i}`, t.row || 0), i * 50);
-            });
-            html += `</div>`;
-            result.innerHTML = html;
         }
+
+        switchTab('playlist');
     } catch (e) {
-        if (result) result.innerHTML = `<div style="color:var(--accent-red);padding:16px;">Failed to generate playlist. Try again.</div>`;
+        if (result) result.innerHTML = `<div style="color:var(--accent-red);padding:12px 0;">Failed to generate playlist. Please try again.</div>`;
     } finally {
         playlistGenerating = false;
-        if (btn) btn.innerHTML = `${SVG_ICONS.sparkle || ''}<span>Generate Playlist</span>`;
+        if (btn) btn.innerHTML = `<span>Generate Playlist</span>`;
     }
 }
 
@@ -1206,7 +1412,7 @@ async function loadArtistHeaderPhoto(artistName) {
         if (data && data.image_url) {
             avatarEl.innerHTML = `<img src="${data.image_url}" alt="${artistName}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
         }
-    } catch (e) {}
+    } catch (e) { }
 }
 
 async function loadArtistCircleAvatar(artistName, elementId) {
@@ -1218,7 +1424,7 @@ async function loadArtistCircleAvatar(artistName, elementId) {
         if (data && data.image_url) {
             el.innerHTML = `<img src="${data.image_url}" alt="${artistName}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
         }
-    } catch (e) {}
+    } catch (e) { }
 }
 
 function renderLastfmArtistInfo(lfm, artistName) {
@@ -1229,7 +1435,7 @@ function renderLastfmArtistInfo(lfm, artistName) {
     const listeners = lfm.listeners ? `${(lfm.listeners / 1000).toFixed(0)}K listeners` : '';
     const bio = lfm.bio ? lfm.bio.split('Read more')[0].trim() : '';
     const tags = (lfm.tags || []).map(t => `<span class="genre-badge">${t}</span>`).join('');
-    
+
     const simList = lfm.similar_artists || lfm.similar || [];
     const similarHtml = simList.slice(0, 6).map((s, idx) => {
         const sName = typeof s === 'string' ? s : (s.name || '');
@@ -1469,10 +1675,10 @@ async function openAlbumPage(albumTitle, artistName = '', albumId = '') {
     try {
         const res = await fetch(`${API_BASE}/api/album_tracks?title=${encodeURIComponent(albumTitle)}&artist=${encodeURIComponent(artistName)}&id=${encodeURIComponent(albumId)}`);
         const data = await res.json();
-        
+
         document.getElementById('albumTitle').innerText = data.title || albumTitle;
         document.getElementById('albumMeta').innerText = `${data.artist || artistName || 'Soundtrack'} · ${data.tracks.length} songs`;
-        
+
         if (data.cover_art) {
             document.getElementById('albumArtBox').innerHTML = `<img src="${data.cover_art}" alt="${albumTitle}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`;
         } else if (data.tracks.length > 0 && data.tracks[0].deezer_album_art) {
