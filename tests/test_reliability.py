@@ -9,9 +9,9 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from evaluate import eval_groundedness, eval_nl, eval_retrieval  # noqa: E402
-from app import GroundednessChecker, RAGDJ  # noqa: E402
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from src.evaluate import eval_groundedness, eval_nl, eval_retrieval  # noqa: E402
+from backend.app import GroundednessChecker, RAGDJ  # noqa: E402
 
 SEEDS = ["Blinding Lights", "Summertime Sadness", "Treat You Better", "Believer", "Circles"]
 

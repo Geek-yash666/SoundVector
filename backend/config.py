@@ -34,6 +34,8 @@ def s(t: str, *st) -> str:
 
 
 SCORING_PRESETS = {
+    "radio": {"embed":0.42,"audio":0.18,"genre":0.12,"artist":0.02,"popularity":0.24,"era":0.02},
+    "related": {"embed":0.32,"audio":0.16,"genre":0.12,"artist":0.30,"popularity":0.08,"era":0.02},
     "similar":  {"embed": 0.30, "audio": 0.25, "genre": 0.25, "artist": 0.05, "popularity": 0.15, "era": 0.00},
     "vibe":     {"embed": 0.45, "audio": 0.35, "genre": 0.20, "artist": 0.00, "popularity": 0.00, "era": 0.00},
     "popular":  {"embed": 0.25, "audio": 0.10, "genre": 0.20, "artist": 0.00, "popularity": 0.45, "era": 0.00},

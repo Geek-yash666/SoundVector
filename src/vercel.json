@@ -2,6 +2,10 @@
   "version": 2,
   "routes": [
     {
+      "src": "/mark.svg",
+      "dest": "/static/mark.svg"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/api/[...path]?path=$1"
     },
@@ -12,6 +16,10 @@
     {
       "src": "/script.js",
       "dest": "static/script.js"
+    },
+    {
+      "src": "/core.js",
+      "dest": "static/core.js"
     },
     {
       "src": "/(.*)",

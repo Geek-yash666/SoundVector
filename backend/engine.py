@@ -120,6 +120,7 @@ class RecommendationEngine:
         cat = m.iloc[self._catalog_rows].copy()
         cat["_row"] = self._catalog_rows
         cat["_name_lower"] = cat["name"].str.lower()
+        cat["_title_key"] = norm[self._catalog_rows]
         cat["_artist_lower"] = cat["artist"].str.lower()
         self.catalog = cat.reset_index(drop=True)
 

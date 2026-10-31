@@ -2,8 +2,8 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from app import _norm_title  # noqa: E402
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from backend.app import _norm_title  # noqa: E402
 
 
 def test_search_exact_title_ranks_famous_first(engine):
@@ -66,4 +66,8 @@ def test_mood_vector_retrieval_runs(engine, mood_model):
 def test_artist_albums_returns_albums(engine):
     albums = engine.artist_albums("Justin Bieber")
     assert len(albums) > 0, "expected albums for Justin Bieber"
-    assert albums[0]["track_count"] >= 18
+    catalog_tracks = engine.catalog[engine.catalog["_artist_lower"] == "justin bieber"]
+    expected_counts = catalog_tracks.groupby("album_gid").size().to_dict()
+    actual_counts = {album["album_gid"]: album["track_count"] for album in albums}
+    assert actual_counts == expected_counts, "album grouping lost or duplicated catalog tracks"
+    assert all(album["track_count"] == len(album["tracks"]) for album in albums)

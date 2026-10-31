@@ -18,8 +18,8 @@ import random
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from app import RecommendationEngine, SCORING_PRESETS  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.app import RecommendationEngine, SCORING_PRESETS  # noqa: E402
 
 DEFAULT_SEEDS = [
     "Treat You Better", "Summertime Sadness", "After Hours", "Starboy",

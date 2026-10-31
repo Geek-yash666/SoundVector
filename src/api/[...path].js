@@ -1,14 +1,16 @@
 export default async function handler(req, res) {
-  const targetHost = process.env.SOUNDVECTOR_API_BASE;
+  const targetHost = process.env.SOUNDVECTOR_API_BASE || process.env.HF_SPACE_URL || process.env.NEXT_PUBLIC_HF_SPACE_URL;
+  if (!targetHost) {
+    return res.status(503).json({ detail: "The music service is not configured. Please try again later." });
+  }
 
   const path = req.query.path;
   const pathStr = Array.isArray(path) ? path.join('/') : (path || '');
   const queryIdx = req.url.indexOf('?');
   const queryString = queryIdx !== -1 ? req.url.substring(queryIdx) : '';
 
-  const targetUrl = `${targetHost.replace(/\/$/, '')}/api/${pathStr}${queryString}`;
-
   try {
+    const targetUrl = `${targetHost.replace(/\/$/, '')}/api/${pathStr}${queryString}`;
     const options = {
       method: req.method,
       headers: {

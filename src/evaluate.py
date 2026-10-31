@@ -23,8 +23,8 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from app import (  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.app import (  # noqa: E402
     RecommendationEngine, BASE_GENRE_MAP, MoodToVector,
     DEFAULT_MOOD_MODEL_PATH as DEFAULT_PATH, RAGDJ, GroundednessChecker
 )

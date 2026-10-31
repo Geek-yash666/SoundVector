@@ -12,9 +12,14 @@ data/*
 
 
 artifacts/
+profiles/*.json
 profiles/*.events.jsonl
 !profiles/.gitkeep
 
 # Ignore nested .git folders inside backend and src so root tracks files normally
 backend/.git
 src/.git
+.cache/
+
+# Local Python virtual environment
+.venv/
